@@ -7,59 +7,65 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react'
-import { createStore, narrowStore, storeOf, type Container, type SetStore, type Store } from './store'
-
-const read = <T,>(store: Store<any>, select?: (s: any) => T) => {
-  const get = () => (select ? select(store.get()) : store.get())
-  return useSyncExternalStore(store.subscribe, get, get)
-}
+import { createStore, narrowSetter, type Container, type SetStore, type Store } from './store'
 
 /** Like `useState`: the value re-renders the owner; the setter is stable. */
 export function useNewStore<T extends Container>(initial: T | (() => T)): [T, SetStore<T>] {
   const [store] = useState(() => createStore(typeof initial === 'function' ? initial() : initial))
-  return [read(store), store.set]
+  return [useSyncExternalStore(store.subscribe, store.get, store.get), store.set]
 }
 
 /**
- * Re-render only when `selector(store)` changes (by `Object.is`, so return
- * stable references). `store` is any value from this library.
- */
-export function useSelector<T extends Container, S>(store: T, selector: (state: T) => S): S {
-  return read(storeOf(store), selector)
-}
-
-/** One narrowed store per parent, always calling the latest `narrowFn` (so inline fns are fine). */
-function useNarrowedCore<T extends Container, N extends Container>(parent: Store<T>, narrowFn: (s: T) => N) {
-  const fn = useRef(narrowFn)
-  fn.current = narrowFn
-  return useMemo(() => narrowStore(parent, (s) => fn.current(s)), [parent])
-}
-
-/**
- * Narrow `store` to the object/array `narrowFn` returns. `narrowFn` may be
- * an inline function; the returned setter is stable.
+ * Narrow `store` to the object/array `narrowFn` returns.
+ *
+ * Pass the parent's setter to get a narrowed setter (stable as long as
+ * `setStore` is). Leave it out and the result is read-only: `[value]`.
+ * `narrowFn` may be an inline function.
  */
 export function useNarrowedStore<T extends Container, N extends Container>(
   store: T,
   narrowFn: (state: T) => N,
-): [N, SetStore<N>] {
-  const narrowed = useNarrowedCore(storeOf(store), narrowFn)
-  return [read(narrowed), narrowed.set]
+): [N]
+export function useNarrowedStore<T extends Container, N extends Container>(
+  store: T,
+  narrowFn: (state: T) => N,
+  setStore: SetStore<T>,
+): [N, SetStore<N>]
+export function useNarrowedStore<T extends Container, N extends Container>(
+  store: T,
+  narrowFn: (state: T) => N,
+  setStore?: SetStore<T>,
+): [N] | [N, SetStore<N>] {
+  const fn = useRef(narrowFn)
+  fn.current = narrowFn
+  // If the target vanished (e.g. a list item was removed while its child is
+  // still mounted for one more render), keep the last value instead of crashing.
+  const last = useRef<N>(undefined as never)
+  const value = (last.current = narrowFn(store) ?? last.current)
+  const set = useMemo(
+    () => setStore && narrowSetter(setStore, (s: T) => fn.current(s)),
+    [setStore],
+  )
+  return set ? [value, set] : [value]
 }
 
+type NarrowProps<T extends Container, N extends Container> = { store: T; by: (state: T) => N }
+
 /**
- * Narrow in JSX. The render function gets the narrowed value and its setter.
+ * Narrow in JSX; same rules as `useNarrowedStore` (no `setStore` = read-only).
  *
- *   <Narrow store={store} by={(s) => s.todos[i]!}>
+ *   <Narrow store={store} setStore={setStore} by={(s) => s.todos[i]!}>
  *     {(todo, setTodo) => <Todo todo={todo} onToggle={() => setTodo((t) => { t.done = !t.done })} />}
  *   </Narrow>
  */
-export function Narrow<T extends Container, N extends Container>(props: {
-  store: T
-  by: (state: T) => N
-  children: (value: N, set: SetStore<N>) => ReactNode
-}) {
-  const [value, set] = useNarrowedStore(props.store, props.by)
+export function Narrow<T extends Container, N extends Container>(
+  props: NarrowProps<T, N> & { setStore: SetStore<T>; children: (value: N, set: SetStore<N>) => ReactNode },
+): ReactNode
+export function Narrow<T extends Container, N extends Container>(
+  props: NarrowProps<T, N> & { setStore?: undefined; children: (value: N) => ReactNode },
+): ReactNode
+export function Narrow(props: any) {
+  const [value, set] = (useNarrowedStore as any)(props.store, props.by, props.setStore)
   return <>{props.children(value, set)}</>
 }
 
@@ -68,52 +74,81 @@ export interface ContextStore<T extends Container> {
   use(): T
   /** Stable setter; never re-renders the caller. */
   useSet(): SetStore<T>
-  /** @internal The underlying store (used to chain narrowed contexts). */
-  useCore(): Store<T>
 }
 
 export interface StoreContext<T extends Container> extends ContextStore<T> {
-  /** Provide a store value from `useNewStore`/another context, or own a new one via `initial`. */
-  Provider(props: { store: T; children?: ReactNode } | { initial: T | (() => T); children?: ReactNode }): ReactNode
+  /** Provide a store from `useNewStore`, or have the provider own a new one via `initial`. */
+  Provider(
+    props:
+      | { store: T; setStore: SetStore<T>; children?: ReactNode }
+      | { initial: T | (() => T); children?: ReactNode },
+  ): ReactNode
 }
 
+const NONE = Symbol('no provider')
+
+/** Value and setter live in separate contexts so setter-only consumers never re-render. */
 function makeContext<T extends Container>(fallback?: T) {
-  const Ctx = createContext<Store<T> | null>(null)
-  let fallbackStore: Store<T> | undefined
+  const ValueCtx = createContext<T | typeof NONE>(NONE)
+  const SetCtx = createContext<SetStore<T> | typeof NONE>(NONE)
+  let fb: Store<T> | undefined
+  const fallbackStore = () => (fb ??= createStore(fallback!))
+  const missing = () => new Error('narrow: no store found in context and no default was given')
 
-  const useCore = () => {
-    const found = useContext(Ctx)
-    if (found) return found
-    if (fallback === undefined) throw new Error('narrow: no store found in context and no default was given')
-    return (fallbackStore ??= createStore(fallback))
-  }
   const def: ContextStore<T> = {
-    useCore,
-    use: () => read(useCore()),
-    useSet: () => useCore().set,
+    use() {
+      const value = useContext(ValueCtx)
+      // Subscribing is unconditional (hooks), but only to the default store, and only if one exists.
+      const s = fallback !== undefined ? fallbackStore() : undefined
+      const dflt = useSyncExternalStore(s?.subscribe ?? noopSubscribe, s?.get ?? noopGet, s?.get ?? noopGet)
+      if (value !== NONE) return value
+      if (s) return dflt as T
+      throw missing()
+    },
+    useSet() {
+      const set = useContext(SetCtx)
+      if (set !== NONE) return set
+      if (fallback !== undefined) return fallbackStore().set
+      throw missing()
+    },
   }
-  return { Ctx, def }
+  const Provide = (p: { value: T; set: SetStore<T>; children?: ReactNode }) => (
+    <ValueCtx value={p.value}>
+      <SetCtx value={p.set}>{p.children}</SetCtx>
+    </ValueCtx>
+  )
+  return { def, Provide }
 }
+const noopSubscribe = () => () => {}
+const noopGet = () => undefined
 
 /** `fallback` is used (as one shared store) when no provider is above. */
 export function createContextStore<T extends Container>(fallback?: T): StoreContext<T> {
-  const { Ctx, def } = makeContext<T>(fallback)
+  const { def, Provide } = makeContext<T>(fallback)
   function Owned(p: { initial: T | (() => T); children?: ReactNode }) {
-    const [store] = useState(() => createStore(typeof p.initial === 'function' ? p.initial() : p.initial))
-    return <Ctx value={store}>{p.children}</Ctx>
+    const [value, set] = useNewStore(p.initial)
+    return <Provide value={value} set={set}>{p.children}</Provide>
   }
-  function Provider(props: { store: T; children?: ReactNode } | { initial: T | (() => T); children?: ReactNode }) {
-    return 'store' in props ? <Ctx value={storeOf(props.store)}>{props.children}</Ctx> : <Owned initial={props.initial}>{props.children}</Owned>
+  function Provider(
+    props:
+      | { store: T; setStore: SetStore<T>; children?: ReactNode }
+      | { initial: T | (() => T); children?: ReactNode },
+  ) {
+    return 'store' in props ? (
+      <Provide value={props.store} set={props.setStore}>{props.children}</Provide>
+    ) : (
+      <Owned initial={props.initial}>{props.children}</Owned>
+    )
   }
   return { ...def, Provider }
 }
 
 /**
- * A context whose store is a narrowed view of another context's store
- * (which can itself be narrowed). `narrowFn` receives the parent state and
- * the `arg` prop given to the Provider, e.g. a list index:
+ * A context that is a narrowed view of another context (which can itself be
+ * narrowed). `narrowFn` receives the parent state and the `arg` prop given to
+ * the Provider, e.g. a list index:
  *
- *   const todoDef = createNarrowedStoreContext(todosDef, (s, i: number) => s[i]!)
+ *   const todoDef = createNarrowedStoreContext(todosDef, (s, i: number) => s.todos[i]!)
  *   <todoDef.Provider arg={i}><TodoRow /></todoDef.Provider>
  */
 export function createNarrowedStoreContext<T extends Container, N extends Container, A = void>(
@@ -123,10 +158,10 @@ export function createNarrowedStoreContext<T extends Container, N extends Contai
 ): ContextStore<N> & {
   Provider(props: { children?: ReactNode } & ([A] extends [void] ? { arg?: undefined } : { arg: A })): ReactNode
 } {
-  const { Ctx, def } = makeContext<N>(fallback)
+  const { def, Provide } = makeContext<N>(fallback)
   function Provider(props: { children?: ReactNode; arg?: A }) {
-    const arg = props.arg as A
-    return <Ctx value={useNarrowedCore(parent.useCore(), (s: T) => narrowFn(s, arg))}>{props.children}</Ctx>
+    const [value, set] = useNarrowedStore(parent.use(), (s) => narrowFn(s, props.arg as A), parent.useSet())
+    return <Provide value={value} set={set}>{props.children}</Provide>
   }
   return { ...def, Provider }
 }

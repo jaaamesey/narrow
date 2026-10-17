@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createStore, narrowStore } from './store'
+import { createStore, narrowSetter, type Container, type SetStore } from './store'
+
+/** A read-through view of `store` for tests: value is always derived from the parent. */
+function narrowStore<T extends Container, N extends Container>(store: { get(): T; set: SetStore<T> }, fn: (s: T) => N) {
+  return { get: () => fn(store.get()), set: narrowSetter(store.set, fn) }
+}
 
 type Todo = { id: number; text: string; done: boolean }
 type S = { count: number; todos: Todo[]; meta: { tags: string[] } }
@@ -137,14 +142,14 @@ describe('narrowStore', () => {
     expect(meta.get().tags).toBe(tags.get())
   })
 
-  it('serves the last value and ignores writes once the target is gone', () => {
+  it('ignores writes once the target is gone', () => {
     const store = createStore(init())
     const second = narrowStore(store, (s) => s.todos[1]!)
-    expect(second.get().id).toBe(2)
     store.set((s) => void s.todos.pop())
-    expect(second.get().id).toBe(2) // no crash for not-yet-unmounted children
+    const before = store.get()
     second.set((t) => void (t.done = true))
-    expect(store.get().todos).toHaveLength(1)
+    second.set({ id: 9, text: 'x', done: false })
+    expect(store.get()).toBe(before)
   })
 
   it('refuses to swap in a value of a different kind', () => {
@@ -164,7 +169,7 @@ describe('narrowStore', () => {
   it('only allows narrowing to objects/arrays', () => {
     const store = createStore(init())
     // @ts-expect-error primitives can't be stores
-    const bad = () => narrowStore(store, (s) => s.count)
+    const bad = () => narrowSetter(store.set, (s) => s.count)
     void bad
   })
 })

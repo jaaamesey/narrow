@@ -7,7 +7,7 @@ import {
   Narrow,
   useNarrowedStore,
   useNewStore,
-  useSelector,
+  type SetStore,
 } from './index'
 
 type Todo = { id: number; text: string; done: boolean }
@@ -42,42 +42,6 @@ describe('useNewStore', () => {
     expect(title()).toBe('swapped')
     act(() => setStore((s) => ({ ...s, title: s.title + '!' }), 'swap'))
     expect(title()).toBe('swapped!')
-  })
-
-  it('two stores created from the same initial object stay independent', () => {
-    const shared = init()
-    const sets: Array<(fn: (s: S) => void) => void> = []
-    function A({ i }: { i: number }) {
-      const [store, set] = useNewStore(shared)
-      sets[i] = set
-      const [todo, setTodo] = useNarrowedStore(store, (s) => s.todos[0]!)
-      return <div data-testid={`s${i}`}>{todo.text}<button onClick={() => setTodo((t) => void (t.text = `x${i}`))} data-testid={`b${i}`} /></div>
-    }
-    render(<><A i={0} /><A i={1} /></>)
-    act(() => screen.getByTestId('b0').click())
-    expect(screen.getByTestId('s0').textContent).toBe('x0')
-    expect(screen.getByTestId('s1').textContent).toBe('a')
-    expect(shared.todos[0]!.text).toBe('a') // never mutated
-  })
-
-  it('useSelector limits re-renders to changes in the selected value', () => {
-    let add!: () => void
-    const Count = memo(function Count({ store }: { store: S }) {
-      tick('count')
-      return <b data-testid="count">{useSelector(store, (s) => s.todos.length)}</b>
-    })
-    const Title = memo(function Title({ store }: { store: S }) {
-      tick('title')
-      return <i>{useSelector(store, (s) => s.title)}</i>
-    })
-    function App() {
-      const [store, setStore] = useNewStore(init())
-      add = () => setStore((s) => void s.todos.push({ id: 9, text: '', done: false }))
-      return <><Count store={store} /><Title store={store} /></>
-    }
-    render(<App />)
-    act(() => add())
-    expect(screen.getByTestId('count').textContent).toBe('4')
   })
 })
 
@@ -134,7 +98,7 @@ describe('context store', () => {
     function App() {
       const [store, set] = useNewStore(init())
       return (
-        <def.Provider store={store}>
+        <def.Provider store={store} setStore={set}>
           <Title />
           <button data-testid="go" onClick={() => set((s) => void (s.title = 'from owner'))} />
         </def.Provider>
@@ -182,12 +146,12 @@ describe('narrowing', () => {
     return <li data-testid={`row${id}`} onClick={toggle}>{value.text}:{String(value.done)}</li>
   })
 
-  it('useNarrowedStore(store, fn) reads and writes through to the parent', () => {
+  it('useNarrowedStore(store, fn, setStore) reads and writes through to the parent', () => {
     let setRoot!: (fn: (s: S) => void) => void
     function App() {
       const [store, set] = useNewStore(init())
       setRoot = set
-      const [todo, setTodo] = useNarrowedStore(store, (s) => s.todos[1]!)
+      const [todo, setTodo] = useNarrowedStore(store, (s) => s.todos[1]!, set)
       return <button data-testid="t" onClick={() => setTodo((t) => void (t.done = true))}>{todo.text}:{String(todo.done)}:{store.todos[1]!.done ? 'parent-done' : ''}</button>
     }
     render(<App />)
@@ -197,22 +161,50 @@ describe('narrowing', () => {
     expect(screen.getByTestId('t').textContent).toBe('zzz:true:parent-done')
   })
 
+  it('without a setter the result is read-only, enforced by types', () => {
+    function App() {
+      const [store] = useNewStore(init())
+      const narrowed = useNarrowedStore(store, (s) => s.todos[0]!)
+      // @ts-expect-error no setter was given, so there is no second element
+      const [, setTodo] = narrowed
+      return <div data-testid="ro">{narrowed[0].text}{String(setTodo)}</div>
+    }
+    render(<App />)
+    expect(screen.getByTestId('ro').textContent).toBe('aundefined')
+  })
+
+  it('the narrowed setter is stable even with an inline narrowFn', () => {
+    const setters = new Set<unknown>()
+    let bump!: () => void
+    function App() {
+      const [store, set] = useNewStore(init())
+      bump = () => set((s) => void (s.title += '.'))
+      const [, setTodo] = useNarrowedStore(store, (s) => s.todos[0]!, set)
+      setters.add(setTodo)
+      return null
+    }
+    render(<App />)
+    act(() => bump())
+    act(() => bump())
+    expect(setters.size).toBe(1)
+  })
+
   it('<Narrow> items: toggling one row re-renders only that row', () => {
     function List() {
-      const [store] = useNewStore(init())
+      const [store, setStore] = useNewStore(init())
       return (
         <ul>
           {store.todos.map((t, i) => (
-            <Narrow key={t.id} store={store} by={(s) => s.todos[i]!}>
-              {(todo, setTodo) => <Row id={i} value={todo} toggle={useStable(() => setTodo((x) => void (x.done = !x.done)))} />}
+            <Narrow key={t.id} store={store} setStore={setStore} by={(s) => s.todos[i]!}>
+              {(todo, setTodo) => <Row id={i} value={todo} toggle={useStable(setTodo)} />}
             </Narrow>
           ))}
         </ul>
       )
     }
-    // Row is memo'd and `toggle` is recreated by Narrow's render fn, so stabilise it for the assertion.
-    function useStable(fn: () => void) {
-      return useCallback(fn, [])
+    // Row is memo'd: give it a toggle that doesn't change identity.
+    function useStable(setTodo: (fn: (t: Todo) => void) => void) {
+      return useCallback(() => setTodo((x) => void (x.done = !x.done)), [setTodo])
     }
     render(<List />)
     const before = { ...renders }
@@ -223,46 +215,47 @@ describe('narrowing', () => {
     expect(renders.row2).toBe(before.row2)
   })
 
+  it('<Narrow> without setStore renders read-only', () => {
+    function App() {
+      const [store] = useNewStore(init())
+      return <Narrow store={store} by={(s) => s.todos[2]!}>{(t) => <p data-testid="p">{t.text}</p>}</Narrow>
+    }
+    render(<App />)
+    expect(screen.getByTestId('p').textContent).toBe('c')
+  })
+
   it('a still-mounted child whose item was removed keeps its last value instead of crashing', () => {
-    let set!: (fn: (s: S) => void) => void
-    function Item({ store }: { store: S }) {
-      const [t] = useNarrowedStore(store, (s) => s.todos[2]!)
+    let set!: SetStore<S>
+    function Item({ store, setStore }: { store: S; setStore: SetStore<S> }) {
+      const [t, setT] = useNarrowedStore(store, (s) => s.todos[2]!, setStore)
+      lastSet = setT
       return <p data-testid="p">{t.text}</p>
     }
+    let lastSet!: (fn: (t: Todo) => void) => void
     function App() {
       const [store, setStore] = useNewStore(init())
       set = setStore
-      return <Item store={store} />
+      return <Item store={store} setStore={setStore} />
     }
     render(<App />)
     act(() => set((s) => void s.todos.pop()))
     expect(screen.getByTestId('p').textContent).toBe('c')
+    const after = () => lastSet((t) => void (t.text = 'nope')) // write to vanished node: no-op, no throw
+    expect(() => act(after)).not.toThrow()
   })
 
-  it('narrowing a narrowed value', () => {
+  it('narrowing a narrowed value: pass the narrowed value and narrowed setter', () => {
     function App() {
-      const [store] = useNewStore(init())
-      const [todo] = useNarrowedStore(store, (s) => s.todos[0]!)
-      const [same, setSame] = useNarrowedStore(todo, (t) => t)
-      return <button data-testid="b" onClick={() => setSame((x) => void (x.text = 'deep'))}>{same.text}</button>
+      const [store, set] = useNewStore(init())
+      const [todo, setTodo] = useNarrowedStore(store, (s) => s.todos[0]!, set)
+      const [text, setText] = useNarrowedStore(todo, (t) => ({ ...t }) as Todo, setTodo) // detached copy: writes are no-ops
+      void text
+      const [self, setSelf] = useNarrowedStore(todo, (t) => t, setTodo)
+      return <button data-testid="b" onClick={() => { setText((x) => void (x.text = 'ignored')); setSelf((x) => void (x.text = 'deep')) }}>{self.text}</button>
     }
     render(<App />)
     act(() => screen.getByTestId('b').click())
     expect(screen.getByTestId('b').textContent).toBe('deep')
-  })
-
-  it('rejects values that did not come from the library', () => {
-    function Bad() {
-      useNarrowedStore(init(), (s) => s.todos)
-      return null
-    }
-    const err = console.error
-    console.error = () => {}
-    try {
-      expect(() => render(<Bad />)).toThrow(/not a store value/)
-    } finally {
-      console.error = err
-    }
   })
 
   it('narrowed contexts read and write through the parent context', () => {
@@ -290,6 +283,40 @@ describe('narrowing', () => {
     act(() => setTodo((t) => void (t.text = 'edited')))
     act(() => root((s) => void (s.todos[0]!.text = 'untouched')))
     expect(screen.getByTestId('todo').textContent).toBe('edited')
+  })
+
+  it('narrowed contexts: consumers re-render only when their node changes; setter-only never', () => {
+    const todosDef = createContextStore<S>()
+    const todoDef = createNarrowedStoreContext(todosDef, (s, i: number) => s.todos[i]!)
+    let root!: ReturnType<typeof todosDef.useSet>
+    function Root() {
+      root = todosDef.useSet()
+      return null
+    }
+    function Reader({ i }: { i: number }) {
+      tick(`read${i}`)
+      return <i>{todoDef.use().text}</i>
+    }
+    function Writer() {
+      tick('write')
+      todoDef.useSet()
+      return null
+    }
+    render(
+      <todosDef.Provider initial={init()}>
+        <Root />
+        {[0, 1].map((i) => (
+          <todoDef.Provider key={i} arg={i}>
+            <Reader i={i} />
+            <Writer />
+          </todoDef.Provider>
+        ))}
+      </todosDef.Provider>,
+    )
+    act(() => root((s) => void (s.todos[0]!.text = 'changed')))
+    expect(renders.read0).toBe(2)
+    expect(renders.read1).toBe(1)
+    expect(renders.write).toBe(2) // once per Provider, from mount only
   })
 
   it('narrowed context follows a changing arg', () => {
