@@ -75,7 +75,7 @@ const todoStore = createNarrowedStoreContext(appStore, (s, id: string) => s.todo
 
 ## How it compares
 
-Most state managers have components reach into a global store with selectors and actions (Zustand, Redux), or split state into atoms or proxies (Jotai, MobX, Valtio). `narrow` keeps one store of plain, immutable data that flows through props and context like `useState`, so React and the React Compiler work as usual. Narrowed writes give a component a setter for just its slice: it edits that slice with simple mutations and never sees the rest of the state. Narrowed reads (`NarrowList`, narrowed contexts) re-render only the components whose slice changed.
+Most state managers have components reach into a global store with selectors and actions (Zustand, Redux), or split state into atoms or proxies (Jotai, MobX, Valtio). `narrow` keeps one store of plain, immutable data that flows through props and context like `useState`, so React and the React Compiler work as usual. For encapsulation, narrowed writes give a component a setter for just its slice: it edits that slice with simple mutations and never sees the rest of the state. For performance, narrowed reads (`NarrowList`, narrowed contexts) re-render only the components whose slice changed.
 
 ## Example
 
