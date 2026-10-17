@@ -1,6 +1,10 @@
 import { create, type Draft } from 'mutative'
 
-/** Anything a store can hold: objects and arrays (not primitives). */
+/**
+ * Anything a store can hold. Follows Mutative's rules: plain objects, arrays,
+ * Maps and Sets are drafted; other objects (Dates, class instances) are values
+ * you replace rather than mutate.
+ */
 export type Container = object
 
 type Primitive = string | number | boolean | bigint | symbol | null | undefined
@@ -80,7 +84,12 @@ function pathOf(state: object, narrowFn: (state: any) => unknown): PropertyKey[]
     if (v === null || typeof v !== 'object') return v
     const isArray = Array.isArray(v)
     return new Proxy(isArray ? [] : {}, {
-      get: (_, k) => (k === PATH ? path : track(Reflect.get(v, k), [...path, k])),
+      get: (_, k) => {
+        if (k === PATH) return path
+        // A getter's result isn't stored at that key, so writing there would do nothing: leave it untracked.
+        if (Reflect.getOwnPropertyDescriptor(v, k)?.get) return Reflect.get(v, k)
+        return track(Reflect.get(v, k), [...path, k])
+      },
       has: (_, k) => k in v,
       ownKeys: () => Reflect.ownKeys(v),
       getPrototypeOf: () => Object.getPrototypeOf(v),

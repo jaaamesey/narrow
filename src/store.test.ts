@@ -235,6 +235,13 @@ describe('narrowStore', () => {
     expect(store.get().meta.tags).toEqual(['x'])
   })
 
+  it('a function narrow through a getter throws instead of silently doing nothing', () => {
+    const store = createStore({ items: [{ v: 1 }], get first() { return this.items[0]! } })
+    const first = narrowStore(store, (s) => s.first)
+    expect(first.get()).toBe(store.get().items[0])
+    expect(() => first.set({ v: 2 })).toThrow(/Pass \{ get, swap \}/)
+  })
+
   it('works with Map and Set', () => {
     const store = createStore({ m: new Map([['a', 1]]), s: new Set([1]) })
     narrowStore(store, (s) => s.m).set(new Map([['b', 2]]))

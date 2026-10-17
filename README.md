@@ -8,6 +8,8 @@ const [store, setStore] = useNewStore({ title: 'x', todos: [] as Todo[] })
 
 `store` is a plain value (re-renders its owner, like `useState`); `setStore` is stable.
 
+State follows [Mutative's rules](https://github.com/unadlib/mutative): plain objects, arrays, Maps and Sets are drafted, so you mutate them in a recipe. Anything else (a `Date`, a class instance) is a value you replace (`s.when = new Date()`), not one you mutate in place.
+
 ## Setting
 
 ```ts
@@ -52,9 +54,10 @@ const [text, setText] = useNarrowedStore(todo, (t) => t.meta, setTodo)
 
 const todoDef = createNarrowedStoreContext(storeDef, (s, i: number) => s.todos[i]!)
 <todoDef.Provider narrowArg={i}><TodoRow /></todoDef.Provider>   // todoDef.use() / useSet() inside
+// narrowArg is compared with Object.is (like a dependency), so prefer an id or index over an object literal
 ```
 
-- Narrow functions must return an object/array/Map/Set (enforced by types) located *inside* the parent state. The narrowed setter is rebuilt whenever the narrow function changes, so it never writes to a stale target. It's stable whenever the function is: hoisted, wrapped in `useCallback`, or any inline function under the React Compiler. To key it on specific values instead, pass deps like `useMemo`: `useNarrowedStore(store, (s) => s.todos[i]!, setStore, [i])` or `<Narrow … deps={[i]}>`. Narrowed contexts follow their `narrowArg` automatically.
+- Narrow functions must return a node *inside* the parent state (types require an object, not a primitive). The narrowed setter is rebuilt whenever the narrow function changes, so it never writes to a stale target. It's stable whenever the function is: hoisted, wrapped in `useCallback`, or any inline function under the React Compiler. To key it on specific values instead, pass deps like `useMemo`: `useNarrowedStore(store, (s) => s.todos[i]!, setStore, [i])` or `<Narrow … deps={[i]}>`. Narrowed contexts follow their `narrowArg` automatically.
 - Writes find the node by running `narrowFn` against a proxy that records the keys it reads, then replace the node at that path, so untouched siblings keep their identity. Lookups like `s.todos.find((t) => t.id === id)` work.
 - When that can't be traced (identity comparisons like `t === ref`, Map entries, a copy or computed value), the write throws and asks for an explicit `{ get, swap }` instead of a function. This works everywhere a narrow function does, including `<Narrow by>` and `createNarrowedStoreContext` (where `get`/`swap` also receive `narrowArg`):
 

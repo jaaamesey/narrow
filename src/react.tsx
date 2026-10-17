@@ -149,7 +149,8 @@ export function createContextStore<T extends Container>(fallback?: T): StoreCont
  * A context that is a narrowed view of another context (which can itself be
  * narrowed). `narrow` (a function or `{ get, swap }`) receives the `narrowArg` prop given
  * to the Provider as its second parameter, e.g. a list index. The setter follows
- * `narrowArg` changes.
+ * `narrowArg` changes, compared with `Object.is` like a dependency, so prefer
+ * primitives (an id or index) over object literals.
  *
  *   const todoDef = createNarrowedStoreContext(todosDef, (s, i: number) => s.todos[i]!)
  *   <todoDef.Provider narrowArg={i}><TodoRow /></todoDef.Provider>
