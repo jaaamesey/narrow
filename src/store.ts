@@ -27,37 +27,15 @@ export interface SetStore<T extends Container> {
   (recipe: (current: T) => T, mode: 'swap'): void
 }
 
-export interface Store<T extends Container> {
-  get(): T
-  /** Stable for the lifetime of the store. */
-  set: SetStore<T>
-  subscribe(listener: () => void): () => void
-}
-
-export function createStore<T extends Container>(initial: T): Store<T> {
-  let state = initial
-  const listeners = new Set<() => void>()
-
-  const set = (next: unknown, mode?: 'mutate' | 'swap') => {
-    mode ??= typeof next === 'function' ? 'mutate' : 'swap'
-    const prev = state
-    if (mode === 'swap') {
-      state = (typeof next === 'function' ? next(prev) : next) as T
-    } else {
-      // Return values are ignored in mutate mode (the types forbid them).
-      state = create(prev, (draft) => void (next as (d: Draft<T>) => unknown)(draft))
-    }
-    if (!Object.is(prev, state)) [...listeners].forEach((l) => l())
-  }
-
-  return {
-    get: () => state,
-    set: set as SetStore<T>,
-    subscribe(listener) {
-      listeners.add(listener)
-      return () => void listeners.delete(listener)
-    },
-  }
+/**
+ * Apply one setter call to `prev`: a mutate recipe through Mutative, or a swap.
+ * Pure, so it can run as a React state updater.
+ */
+export function applyUpdate<T>(prev: T, next: unknown, mode?: 'mutate' | 'swap'): T {
+  mode ??= typeof next === 'function' ? 'mutate' : 'swap'
+  if (mode === 'swap') return (typeof next === 'function' ? next(prev) : next) as T
+  // Return values are ignored in mutate mode (the types forbid them).
+  return create(prev, (draft) => void (next as (d: Draft<T>) => unknown)(draft))
 }
 
 /**

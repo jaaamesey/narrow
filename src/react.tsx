@@ -6,16 +6,20 @@ import {
   useContext,
   useMemo,
   useState,
-  useSyncExternalStore,
   type ReactNode,
 } from 'react'
 import type { Draft } from 'mutative'
-import { createStore, getterOf, narrowSetter, type Container, type Narrower, type SetStore } from './store.js'
+import { applyUpdate, getterOf, narrowSetter, type Container, type Narrower, type SetStore } from './store.js'
 
-/** Like `useState`: the value re-renders the owner; the setter is stable. */
+/**
+ * `useState`, with setters that mutate a draft. The state is ordinary React
+ * state, so updates batch, run in transitions and render concurrently like any
+ * other. Like `useState` updaters, setter functions must be pure.
+ */
 export function useNewStore<T extends Container>(initial: T | (() => T)): [T, SetStore<T>] {
-  const [store] = useState(() => createStore(typeof initial === 'function' ? initial() : initial))
-  return [useSyncExternalStore(store.subscribe, store.get, store.get), store.set]
+  const [state, setState] = useState(initial)
+  const [set] = useState(() => ((next: unknown, mode?: 'mutate' | 'swap') => setState((prev) => applyUpdate(prev, next, mode))) as SetStore<T>)
+  return [state, set]
 }
 
 /**

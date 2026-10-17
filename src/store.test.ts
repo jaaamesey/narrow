@@ -1,5 +1,14 @@
-import { describe, expect, it, vi } from 'vitest'
-import { createStore, getterOf, narrowSetter, type Container, type Narrower, type SetStore } from './store'
+import { describe, expect, it } from 'vitest'
+import { applyUpdate, getterOf, narrowSetter, type Container, type Narrower, type SetStore } from './store'
+
+/** Holds state and applies setter calls the way a React state updater does. */
+function createStore<T extends Container>(initial: T) {
+  let state = initial
+  const set = ((next: unknown, mode?: 'mutate' | 'swap') => {
+    state = applyUpdate(state, next, mode)
+  }) as SetStore<T>
+  return { get: () => state, set }
+}
 
 /** A read-through view of `store` for tests: value is always derived from the parent. */
 function narrowStore<T extends Container, N extends Container>(store: { get(): T; set: SetStore<T> }, narrow: Narrower<T, N>) {
@@ -49,23 +58,12 @@ describe('createStore setters', () => {
     expect(store.get().n).toBe(1)
   })
 
-  it('only notifies when state actually changed', () => {
+  it('a write that changes nothing returns the same state, so React can skip the re-render', () => {
     const store = createStore(init())
-    const l = vi.fn()
-    store.subscribe(l)
-    store.set((s) => void (s.count = 0)) // no-op write
-    store.set(store.get()) // same reference
-    expect(l).not.toHaveBeenCalled()
-    store.set((s) => void s.count++)
-    expect(l).toHaveBeenCalledTimes(1)
-  })
-
-  it('unsubscribes', () => {
-    const store = createStore(init())
-    const l = vi.fn()
-    store.subscribe(l)()
-    store.set((s) => void s.count++)
-    expect(l).not.toHaveBeenCalled()
+    const before = store.get()
+    store.set((s) => void (s.count = 0))
+    store.set(before)
+    expect(store.get()).toBe(before)
   })
 
   it('enforces the mutate/swap distinction in types', () => {
@@ -127,12 +125,11 @@ describe('narrowStore', () => {
 
   it('swapping in an equal-by-reference value is a no-op', () => {
     const store = createStore(init())
-    const l = vi.fn()
-    store.subscribe(l)
+    const before = store.get()
     const todos = narrowStore(store, (s) => s.todos)
     todos.set(todos.get())
     todos.set((cur) => cur, 'swap')
-    expect(l).not.toHaveBeenCalled()
+    expect(store.get()).toBe(before)
   })
 
   it('narrows a narrowed store, writing through every level', () => {

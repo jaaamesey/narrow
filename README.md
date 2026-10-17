@@ -109,6 +109,7 @@ const settingsStore = createNarrowedStoreContext(appStore, (s) => s.settings)
 ### Over Zustand, Jotai or Valtio
 
 - It's React state: plain values in your component tree, not module-level stores, atoms or proxies
+- Updates are ordinary `useState` updates, so they batch and work with transitions. Stores read through `useSyncExternalStore`, like Zustand and Valtio, fall back to blocking updates inside a transition
 - Components receive a slice and a setter instead of reaching into a store by path
 
 ## Details
@@ -125,7 +126,7 @@ const todoStore = createNarrowedStoreContext(appStore, (s, id: string) => s.todo
 
 ### When a narrow function can't be traced
 
-Writes work out where the narrowed data lives by tracing the narrow function. Identity checks (`t === ref`), Map lookups and computed values can't be traced, so the write throws. Pass `get` and `swap` instead:
+Writes work out where the narrowed data lives by tracing the narrow function. Identity checks (`t === ref`), Map lookups and computed values can't be traced, so the update throws when React applies it, and the nearest error boundary catches it. Pass `get` and `swap` instead:
 
 ```ts
 useNarrowedStore(state, { get: (s) => s.byId.get(id)!, swap: (d, todo) => { d.byId.set(id, todo) } }, setState)
@@ -141,6 +142,7 @@ useNarrowedStore(state, (s) => s.todos[i], setState, [i])
 
 ### Edge cases
 
+- Setter functions run as React state updaters, so like `useState` updaters they must be pure. Strict Mode calls them twice.
 - Reading narrowed data that no longer exists throws. Writing to it does nothing, so late async callbacks are safe.
 - Following Mutative, plain objects, arrays, Maps and Sets can be mutated. Dates and class instances are replaced, not mutated.
 

@@ -1,5 +1,5 @@
 import { act, render, screen } from '@testing-library/react'
-import { StrictMode } from 'react'
+import { StrictMode, useTransition } from 'react'
 import { renderToString } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -46,6 +46,21 @@ describe('useNewStore', () => {
     expect(title()).toBe('swapped')
     act(() => setStore((s) => ({ ...s, title: s.title + '!' }), 'swap'))
     expect(title()).toBe('swapped!')
+  })
+  it('updates are ordinary React updates, so they can run in a transition', () => {
+    const seen: string[] = []
+    let start!: () => void
+    function App() {
+      const [state, setState] = useNewStore(init())
+      const [isPending, startTransition] = useTransition()
+      start = () => startTransition(() => setState((s) => void (s.title = 'new')))
+      seen.push(`${isPending ? 'pending' : 'idle'}:${state.title}`)
+      return null
+    }
+    render(<App />)
+    act(() => start())
+    // React first commits the pending state with the old title, then the new title.
+    expect(seen).toEqual(['idle:t', 'pending:t', 'idle:new'])
   })
 })
 
