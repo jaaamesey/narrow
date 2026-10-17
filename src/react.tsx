@@ -55,26 +55,6 @@ export function useNarrowedStore<T extends Container, N extends Container>(
   return set ? [value, set] : [value]
 }
 
-type NarrowProps<T extends Container, N extends Container> = { store: T; by: Narrower<T, N> }
-
-/**
- * Narrow in JSX; same rules as `useNarrowedStore` (no `setStore` = read-only).
- *
- *   <Narrow store={store} setStore={setStore} by={(s) => s.todos[i]!} deps={[i]}>
- *     {(todo, setTodo) => <Todo todo={todo} onToggle={() => setTodo((t) => { t.done = !t.done })} />}
- *   </Narrow>
- */
-export function Narrow<T extends Container, N extends Container>(
-  props: NarrowProps<T, N> & { setStore: SetStore<T>; deps?: DependencyList; children: (value: N, set: SetStore<N>) => ReactNode },
-): ReactNode
-export function Narrow<T extends Container, N extends Container>(
-  props: NarrowProps<T, N> & { setStore?: undefined; children: (value: N) => ReactNode },
-): ReactNode
-export function Narrow(props: any) {
-  const [value, set] = (useNarrowedStore as any)(props.store, props.by, props.setStore, props.deps)
-  return <>{props.children(value, set)}</>
-}
-
 /**
  * Narrow every item of an array store and render `children` once per item.
  * Each item is its own memoized component with a stable setter (cached on the

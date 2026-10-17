@@ -42,10 +42,6 @@ A narrowed store is derived from the parent's value, and writes go through the p
 ```tsx
 const [todo, setTodo] = useNarrowedStore(store, (s) => s.todos[i]!, setStore)
 
-<Narrow store={store} setStore={setStore} by={(s) => s.todos[i]!}>
-  {(todo, setTodo) => <TodoRow todo={todo} onToggle={() => setTodo((t) => { t.done = !t.done })} />}
-</Narrow>
-
 // Leave out the setter and it's read-only (enforced by types): the result is just `[todo]`.
 const [todo] = useNarrowedStore(store, (s) => s.todos[i]!)
 
@@ -62,9 +58,9 @@ const todoDef = createNarrowedStoreContext(storeDef, (s, i: number) => s.todos[i
 // narrowArg is compared with Object.is (like a dependency), so prefer an id or index over an object literal
 ```
 
-- Narrow functions must return a node *inside* the parent state (types require an object, not a primitive). The narrowed setter is rebuilt whenever the narrow function changes, so it never writes to a stale target. It's stable whenever the function is: hoisted, wrapped in `useCallback`, or any inline function under the React Compiler. To key it on specific values instead, pass deps like `useMemo`: `useNarrowedStore(store, (s) => s.todos[i]!, setStore, [i])` or `<Narrow … deps={[i]}>`. Narrowed contexts follow their `narrowArg` automatically.
+- Narrow functions must return a node *inside* the parent state (types require an object, not a primitive). The narrowed setter is rebuilt whenever the narrow function changes, so it never writes to a stale target. It's stable whenever the function is: hoisted, wrapped in `useCallback`, or any inline function under the React Compiler. To key it on specific values instead, pass deps like `useMemo`: `useNarrowedStore(store, (s) => s.todos[i]!, setStore, [i])`. Narrowed contexts follow their `narrowArg` automatically.
 - Writes find the node by running `narrowFn` against a proxy that records the keys it reads, then replace the node at that path, so untouched siblings keep their identity. Lookups like `s.todos.find((t) => t.id === id)` work.
-- When that can't be traced (identity comparisons like `t === ref`, Map entries, a copy or computed value), the write throws and asks for an explicit `{ get, swap }` instead of a function. This works everywhere a narrow function does, including `<Narrow by>` and `createNarrowedStoreContext` (where `get`/`swap` also receive `narrowArg`):
+- When that can't be traced (identity comparisons like `t === ref`, Map entries, a copy or computed value), the write throws and asks for an explicit `{ get, swap }` instead of a function. This works everywhere a narrow function does, including `createNarrowedStoreContext` (where `get`/`swap` also receive `narrowArg`):
 
   ```ts
   useNarrowedStore(store, { get: (s) => s.byId.get(id)!, swap: (d, todo) => { d.byId.set(id, todo) } }, setStore, [id])

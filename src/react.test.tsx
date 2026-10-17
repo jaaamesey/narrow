@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import {
   createContextStore,
   createNarrowedStoreContext,
-  Narrow,
   NarrowList,
   useNarrowedStore,
   useNewStore,
@@ -217,72 +216,6 @@ describe('narrowing', () => {
     expect(setters.size).toBe(1)
   })
 
-  it('<Narrow> items: changing one row re-renders only that row (unchanged items keep identity)', () => {
-    const Row = memo(function Row({ id, value }: { id: number; value: Todo }) {
-      tick(`row${id}`)
-      return <li data-testid={`row${id}`}>{value.text}:{String(value.done)}</li>
-    })
-    function List() {
-      const [store, setStore] = useNewStore(init())
-      return (
-        <ul>
-          {store.todos.map((t, i) => (
-            <Narrow key={t.id} store={store} setStore={setStore} by={(s) => s.todos[i]!}>
-              {(todo, setTodo) => (
-                <>
-                  <Row id={i} value={todo} />
-                  <button data-testid={`t${i}`} onClick={() => setTodo((x) => void (x.done = !x.done))} />
-                </>
-              )}
-            </Narrow>
-          ))}
-        </ul>
-      )
-    }
-    render(<List />)
-    const before = { ...renders }
-    act(() => screen.getByTestId('t1').click())
-    expect(screen.getByTestId('row1').textContent).toBe('b:true')
-    expect(renders.row1).toBe(before.row1! + 1)
-    expect(renders.row0).toBe(before.row0)
-    expect(renders.row2).toBe(before.row2)
-  })
-
-  it('<Narrow> without setStore renders read-only', () => {
-    function App() {
-      const [store] = useNewStore(init())
-      return <Narrow store={store} by={(s) => s.todos[2]!}>{(t) => <p data-testid="p">{t.text}</p>}</Narrow>
-    }
-    render(<App />)
-    expect(screen.getByTestId('p').textContent).toBe('c')
-  })
-
-  it('removing an item unmounts its row without errors; a stale handler for it is a no-op', () => {
-    let setRoot!: SetStore<S>
-    let staleSet!: SetStore<Todo>
-    function App() {
-      const [store, setStore] = useNewStore(init())
-      setRoot = setStore
-      return (
-        <>
-          {store.todos.map((t, i) => (
-            <Narrow key={t.id} store={store} setStore={setStore} by={(s) => s.todos[i]!}>
-              {(todo, setTodo) => {
-                if (i === 2) staleSet = setTodo
-                return <p data-testid={`p${i}`}>{todo.text}</p>
-              }}
-            </Narrow>
-          ))}
-        </>
-      )
-    }
-    render(<App />)
-    act(() => setRoot((s) => void s.todos.pop()))
-    expect(screen.queryByTestId('p2')).toBeNull()
-    expect(() => act(() => staleSet((t) => void (t.text = 'nope')))).not.toThrow()
-    expect(screen.getByTestId('p1').textContent).toBe('b')
-  })
-
   it('reading a missing node throws', () => {
     function App() {
       const [store] = useNewStore(init())
@@ -399,7 +332,7 @@ describe('narrowing', () => {
     expect(screen.getByTestId('b').textContent).toBe('1:1')
   })
 
-  it('<Narrow> and narrowed contexts accept { get, swap }', () => {
+  it('useNarrowedStore and narrowed contexts accept { get, swap }', () => {
     type M = { byId: Map<string, Todo> }
     const mDef = createContextStore<M>()
     const entryDef = createNarrowedStoreContext(mDef, {
@@ -410,13 +343,15 @@ describe('narrowing', () => {
       const set = entryDef.useSet()
       return <button data-testid="ctx" onClick={() => set((t) => void (t.text = 'ctx'))}>{entryDef.useVal().text}</button>
     }
+    function EntryA({ store, setStore }: { store: M; setStore: SetStore<M> }) {
+      const [t, setT] = useNarrowedStore(store, { get: (s) => s.byId.get('a')!, swap: (d, v) => void d.byId.set('a', v) }, setStore)
+      return <button data-testid="narrow" onClick={() => setT((x) => void (x.text = 'narrow'))}>{t.text}</button>
+    }
     function App() {
       const [store, setStore] = useNewStore<M>({ byId: new Map([['a', { id: 1, text: 'a', done: false }], ['b', { id: 2, text: 'b', done: false }]]) })
       return (
         <mDef.Provider store={store} setStore={setStore}>
-          <Narrow store={store} setStore={setStore} by={{ get: (s) => s.byId.get('a')!, swap: (d, v) => void d.byId.set('a', v) }}>
-            {(t, setT) => <button data-testid="narrow" onClick={() => setT((x) => void (x.text = 'narrow'))}>{t.text}</button>}
-          </Narrow>
+          <EntryA store={store} setStore={setStore} />
           <entryDef.Provider narrowArg="b"><CtxView /></entryDef.Provider>
         </mDef.Provider>
       )
