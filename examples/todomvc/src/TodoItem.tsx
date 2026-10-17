@@ -2,16 +2,7 @@ import { useState } from 'react'
 import type { SetStore } from 'narrow'
 import type { Todo } from './store'
 
-/**
- * A single todo, narrowed out of the app state by `<NarrowList>`.
- *
- * Encapsulation: it only ever sees one `Todo` and a setter for that todo. It
- * doesn't know the app's state shape and can't touch any other todo.
- *
- * Performance: editing this todo re-renders only this component. Other todos
- * keep their identity (structural sharing) and stable setters, so `NarrowList`
- * skips them. No `memo` needed.
- */
+// Sees only its own todo and a setter for it, and re-renders only when that todo changes.
 export function TodoItem({ todo, setTodo, onDestroy }: { todo: Todo; setTodo: SetStore<Todo>; onDestroy: (id: string) => void }) {
   const [editing, setEditing] = useState(false)
 
@@ -50,7 +41,7 @@ export function TodoItem({ todo, setTodo, onDestroy }: { todo: Todo; setTodo: Se
           autoFocus
           onBlur={(e) => finishEditing(e.currentTarget)}
           onKeyDown={(e) => {
-            if (e.key === 'Escape') e.currentTarget.value = todo.title // cancel: blur then saves the unchanged title
+            if (e.key === 'Escape') e.currentTarget.value = todo.title // cancel
             if (e.key === 'Enter' || e.key === 'Escape') e.currentTarget.blur()
           }}
         />

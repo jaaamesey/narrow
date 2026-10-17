@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { applyUpdate, getterOf, narrowSetter, type Container, type Narrower, type SetStore } from './store'
 
-/** Holds state and applies setter calls the way a React state updater does. */
+// Applies setter calls like React's state updater would.
 function createStore<T extends Container>(initial: T) {
   let state = initial
   const set = ((next: unknown, mode?: 'mutate' | 'swap') => {
@@ -10,7 +10,6 @@ function createStore<T extends Container>(initial: T) {
   return { get: () => state, set }
 }
 
-/** A read-through view of `store` for tests: value is always derived from the parent. */
 function narrowStore<T extends Container, N extends Container>(store: { get(): T; set: SetStore<T> }, narrow: Narrower<T, N>) {
   return { get: () => getterOf(narrow)(store.get()), set: narrowSetter(store.set, narrow) }
 }
@@ -200,7 +199,7 @@ describe('narrowStore', () => {
     const store = createStore(init())
     const ref = store.get().todos[1]!
     const todo = narrowStore(store, (s) => s.todos.find((t) => t === ref)!)
-    expect(todo.get()).toBe(ref) // reads are plain values, so identity works
+    expect(todo.get()).toBe(ref)
     expect(() => todo.set((t) => void (t.done = true))).toThrow(/Pass \{ get, swap \}/)
   })
 

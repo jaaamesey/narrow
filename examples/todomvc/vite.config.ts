@@ -5,6 +5,5 @@ import { defineConfig } from 'vite'
 
 export default defineConfig({
   plugins: [react(), babel({ presets: [reactCompilerPreset()] })],
-  // Use the library straight from the repo's source.
   resolve: { alias: { narrow: fileURLToPath(new URL('../../src/index.ts', import.meta.url)) } },
 })

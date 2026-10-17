@@ -4,7 +4,6 @@ import { createContextStore } from 'narrow'
 export type Todo = { id: string; title: string; completed: boolean }
 export type State = { todos: Todo[] }
 
-/** The whole app's state. */
 export const todosDef = createContextStore<State>()
 
 const STORAGE_KEY = 'todos-narrow'
@@ -30,5 +29,4 @@ const subscribeToHash = (onChange: () => void) => {
   return () => removeEventListener('hashchange', onChange)
 }
 
-/** The current filter, from the URL (`#/`, `#/active`, `#/completed`), as TodoMVC specifies. */
 export const useFilter = () => useSyncExternalStore(subscribeToHash, readFilter)

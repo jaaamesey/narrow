@@ -22,7 +22,6 @@ const init = (): S => ({
   ],
 })
 
-/** Counts renders per label, so we can assert who did (not) re-render. */
 const renders: Record<string, number> = {}
 const tick = (k: string) => (renders[k] = (renders[k] ?? 0) + 1)
 beforeEach(() => {
@@ -59,7 +58,6 @@ describe('useNewStore', () => {
     }
     render(<App />)
     act(() => start())
-    // React first commits the pending state with the old title, then the new title.
     expect(seen).toEqual(['idle:t', 'pending:t', 'idle:new'])
   })
 })
@@ -137,12 +135,12 @@ describe('context store', () => {
     const withDefault = createContextStore<S>(init())
     let set!: typeof setStore
     function Reader() {
-      set = withDefault.useSet() // obtaining the setter is fine...
+      set = withDefault.useSet()
       return <div data-testid="r">{withDefault.useVal().title}</div>
     }
     render(<Reader />)
     expect(screen.getByTestId('r').textContent).toBe('t')
-    expect(() => set((s) => void (s.title = 'x'))).toThrow(/read-only/) // ...calling it is not
+    expect(() => set((s) => void (s.title = 'x'))).toThrow(/read-only/)
   })
 
   it('a provider overrides the default', () => {
@@ -186,7 +184,7 @@ describe('narrowing', () => {
     expect(setters[2]).not.toBe(setters[1])
     expect(screen.getByTestId('b').textContent).toBe('b')
     act(() => screen.getByTestId('b').click())
-    expect(screen.getByTestId('b').textContent).toBe('hit') // wrote to todo 1, the new target
+    expect(screen.getByTestId('b').textContent).toBe('hit')
   })
 
   it('without deps, the setter follows the narrow function (never writes to a stale target)', () => {
@@ -231,7 +229,7 @@ describe('narrowing', () => {
   it('<NarrowList>: writes go to the right item, by key, even after reordering', () => {
     let setRoot!: SetStore<S>
     const setters: Record<number, SetStore<Todo>> = {}
-    // Stands in for the React Compiler, which keeps an inline `children` stable.
+    // Hoisted, as the React Compiler would keep it stable.
     const renderItem = (todo: Todo, setTodo: SetStore<Todo>) => {
       setters[todo.id] = setTodo
       return <li data-testid={`li${todo.id}`}>{todo.text}</li>
@@ -250,7 +248,7 @@ describe('narrowing', () => {
   })
 
   it('<NarrowList>: editing one item re-renders only that item, and setters stay stable', () => {
-    // Hoisted to stand in for the React Compiler, which caches top-level inline functions.
+    // Hoisted, as the React Compiler would keep it stable.
     const pickTodos = (s: S) => s.todos
     const seen = new Set<unknown>()
     let setRoot!: SetStore<S>
@@ -263,7 +261,6 @@ describe('narrowing', () => {
       const [store, set] = useNewStore(init())
       setRoot = set
       const [todos, setTodos] = useNarrowedStore(store, pickTodos, set)
-      // Inline getKey: fine, it's read once per item.
       return <NarrowList items={todos} setStore={setTodos} getKey={(t) => t.id}>{renderItem}</NarrowList>
     }
     render(<App />)
@@ -274,7 +271,7 @@ describe('narrowing', () => {
     expect(renders.item1).toBe(before.item1! + 1)
     expect(renders.item0).toBe(before.item0)
     expect(renders.item2).toBe(before.item2)
-    expect(seen.size).toBe(3) // one setter per item, never rebuilt
+    expect(seen.size).toBe(3)
   })
 
   it('<NarrowList>: index keys target whatever is at that index', () => {
@@ -292,7 +289,7 @@ describe('narrowing', () => {
     }
     render(<App />)
     const setAtIndex0 = setters[0]!
-    act(() => setRoot((s) => void s.todos.shift())) // index 0 is now todo 1
+    act(() => setRoot((s) => void s.todos.shift()))
     act(() => setAtIndex0((t) => void (t.text = 'index 0')))
     expect(screen.getByTestId('li1').textContent).toBe('index 0')
   })
@@ -305,7 +302,7 @@ describe('narrowing', () => {
     }
     let latest!: S
     function App() {
-      // Ids differ from indexes, so a lookup by position would hit the wrong item.
+      // Ids differ from indexes, so a lookup by position would fail.
       const [store, set] = useNewStore<S>({ title: 't', todos: [10, 20, 30].map((id) => ({ id, text: String(id), done: false })) })
       latest = store
       const [todos, setTodos] = useNarrowedStore(store, (s) => s.todos, set)
@@ -465,7 +462,7 @@ describe('narrowing', () => {
     rerender(ui(2))
     expect(screen.getByTestId('v').textContent).toBe('c')
     act(() => set((t) => void (t.text = 'written')))
-    expect(screen.getByTestId('v').textContent).toBe('written') // wrote to todo 2, not the stale todo 0
+    expect(screen.getByTestId('v').textContent).toBe('written')
   })
 
   it('narrowed context falls back to its default when nothing is provided', () => {

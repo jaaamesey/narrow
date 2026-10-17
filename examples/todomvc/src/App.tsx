@@ -3,10 +3,6 @@ import { NarrowList, useNarrowedStore } from 'narrow'
 import { TodoItem } from './TodoItem'
 import { loadState, saveState, todosDef, useFilter, type Filter } from './store'
 
-/**
- * The provider owns the store, so `App` itself never re-renders: only the
- * components below that read the state do.
- */
 export function App() {
   return (
     <todosDef.Provider initial={loadState}>
@@ -32,13 +28,11 @@ function Persist() {
   return null
 }
 
-/** Only sets state, so it never re-renders when todos change. */
 function Header() {
   const setTodos = todosDef.useSet()
   return (
     <header className="header">
       <h1>todos</h1>
-      {/* A form action: React resets the form after it runs. */}
       <form
         action={(data) => {
           const title = String(data.get('title')).trim()
@@ -82,8 +76,7 @@ function Main() {
       />
       <label htmlFor="toggle-all">Mark all as complete</label>
       <ul className="todo-list">
-        {/* One narrowed store per todo. `visible` is a filtered subset: each todo's
-            setter finds it by key in the full array that `setTodos` writes to. */}
+        {/* `visible` is filtered; each todo's setter still writes to the full array. */}
         <NarrowList items={visible} setStore={setTodos} getKey={(t) => t.id}>
           {(todo, setTodo) => <TodoItem todo={todo} setTodo={setTodo} onDestroy={destroy} />}
         </NarrowList>
