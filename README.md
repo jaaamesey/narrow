@@ -4,8 +4,6 @@
 
 No global store, no selectors, no actions. State is plain data that lives in your component tree and flows through props and context, so React and the React Compiler treat it like any other state. Writes go through [Mutative](https://github.com/unadlib/mutative), which turns your mutations into immutable updates.
 
-> **Warning:** `narrow` is still a 0.x release, so the API may change. Found a bug, or a case it doesn't handle? Please [open an issue](https://github.com/jaaamesey/narrow/issues).
-
 ```tsx
 // Before: rebuild every level by hand
 setState((s) => ({
@@ -19,6 +17,8 @@ setState((s) => ({
 setState((s) => { s.projects[pi].tasks[ti].done = true })
 ```
 
+> **Warning:** `narrow` is still a 0.x release, so the API may change. Found a bug, or a case it doesn't handle? Please [open an issue](https://github.com/jaaamesey/narrow/issues).
+
 ## First, create a store
 
 It works like `useState`, except a function you pass to the setter mutates a draft.
@@ -27,7 +27,7 @@ It works like `useState`, except a function you pass to the setter mutates a dra
 import { useNewStore } from 'narrow'
 
 function TodoApp() {
-  const [state, setState] = useNewStore({ title: 'Todos', todos: [] as Todo[] })
+  const [state, setState] = useNewStore({ todos: [] as Todo[], settings: { showDone: true } })
 
   const add = (title: string) =>
     setState((s) => {
@@ -40,7 +40,7 @@ function TodoApp() {
 To replace the state instead, pass a value, or a function with `'swap'`:
 
 ```ts
-setState({ title: 'Todos', todos: [] })
+setState({ todos: [], settings: { showDone: true } })
 setState((s) => ({ ...s, todos: [] }), 'swap')
 ```
 
@@ -48,7 +48,17 @@ Returning a new object from a mutating function is a type error, so a forgotten 
 
 ## Then narrow it
 
-A todo row shouldn't need the whole app's state. Narrow the store, and the row gets its todo and a setter that writes back into the store. The row stays reusable, its updates are one line, and it doesn't re-render when other todos change (requires the React Compiler, or a `useCallback`).
+Narrowing gives you one part of the state and a setter for just that part. Writes still land in the original store.
+
+```tsx
+const [settings, setSettings] = useNarrowedStore(state, (s) => s.settings, setState)
+
+setSettings((s) => { s.showDone = false })  // updates state.settings.showDone
+```
+
+`(s) => s.settings` is the narrow function: it picks the part of the state to narrow to. A narrowed store works like any other, so you can pass it down and narrow it again.
+
+That's what makes components small. A todo row doesn't need the whole app's state, just its todo and a setter for it. It stays reusable, its updates are one line, and it doesn't re-render when other todos change (requires the React Compiler, or a `useCallback`). `NarrowList` does this for every item in a list:
 
 ```tsx
 const [todos, setTodos] = useNarrowedStore(state, (s) => s.todos, setState)
@@ -62,14 +72,13 @@ function TodoRow({ todo, setTodo }: { todo: Todo; setTodo: SetStore<Todo> }) {
 }
 ```
 
-`NarrowList` gives each item its own narrowed store. A narrowed store works like any other, so you can narrow it again.
-
 ## Share it through context
 
 ```tsx
 const appStore = createContextStore<AppState>()
 
-<appStore.Provider initial={…}>…</appStore.Provider>
+<appStore.Provider initial={…}>…</appStore.Provider>              // the Provider owns a new store
+<appStore.Provider store={state} setStore={setState}>…</appStore.Provider>  // or share one from useNewStore
 
 const state = appStore.useVal()     // re-renders when the state changes
 const setState = appStore.useSet()  // doesn't
@@ -80,22 +89,24 @@ Narrowed contexts only re-render their consumers when their slice changes:
 ```tsx
 const settingsStore = createNarrowedStoreContext(appStore, (s) => s.settings)
 
-<settingsStore.Provider>…</settingsStore.Provider>
+<settingsStore.Provider>…</settingsStore.Provider>  // settingsStore.useVal() / useSet() inside
 ```
 
-### Why narrow over useState and context?
+## Why narrow?
+
+### Over useState and context
 
 - Nested updates are one line, not a spread at every level
 - Components get their slice of the state and a setter for it, not all of it
 - Value and setter come in separate contexts, so components that only write don't re-render, without splitting contexts by hand
 
-### Why narrow over useImmer?
+### Over useImmer
 
 - Hand a child its slice and a setter that writes back, instead of the parent's whole state or a callback for every kind of edit
 - Context stores are built in, including narrowed contexts that only re-render for their slice
 - `NarrowList` re-renders only the list items that changed (requires the React Compiler, or a `useCallback`)
 
-### Why narrow over Zustand, Jotai or Valtio?
+### Over Zustand, Jotai or Valtio
 
 - It's React state: plain values in your component tree, not module-level stores, atoms or proxies
 - Components receive a slice and a setter instead of reaching into a store by path
