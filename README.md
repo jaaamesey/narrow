@@ -54,7 +54,7 @@ const todoDef = createNarrowedStoreContext(storeDef, (s, i: number) => s.todos[i
 <todoDef.Provider arg={i}><TodoRow /></todoDef.Provider>   // todoDef.use() / useSet() inside
 ```
 
-- Narrow functions must return an object/array/Map/Set (enforced by types) located *inside* the parent state. The narrowed setter is stable. If `narrowFn` reads an outside value (an id/index), pass it in a deps array like `useMemo`: `useNarrowedStore(store, (s) => s.todos[i]!, setStore, [i])` or `<Narrow … deps={[i]}>`. Narrowed contexts follow their `arg` automatically.
+- Narrow functions must return an object/array/Map/Set (enforced by types) located *inside* the parent state. The narrowed setter is rebuilt whenever the narrow function changes, so it never writes to a stale target. It's stable whenever the function is: hoisted, wrapped in `useCallback`, or any inline function under the React Compiler. To key it on specific values instead, pass deps like `useMemo`: `useNarrowedStore(store, (s) => s.todos[i]!, setStore, [i])` or `<Narrow … deps={[i]}>`. Narrowed contexts follow their `arg` automatically.
 - Writes find the node by running `narrowFn` against a proxy that records the keys it reads, then replace the node at that path, so untouched siblings keep their identity. Lookups like `s.todos.find((t) => t.id === id)` work.
 - When that can't be traced (identity comparisons like `t === ref`, Map entries, a copy or computed value), the write throws and asks for an explicit `{ get, swap }` instead of a function. This works everywhere a narrow function does, including `<Narrow by>` and `createNarrowedStoreContext` (where `get`/`swap` also receive `arg`):
 

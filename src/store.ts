@@ -74,10 +74,24 @@ const untraceable = () =>
 
 /** Run `narrowFn` against a proxy that records the keys it reads; return the path to the node it picked. */
 function pathOf(state: object, narrowFn: (state: any) => unknown): PropertyKey[] {
-  const track = (v: unknown, path: PropertyKey[]): unknown =>
-    v !== null && typeof v === 'object'
-      ? new Proxy(v, { get: (t, k) => (k === PATH ? path : track(Reflect.get(t, k), [...path, k])) })
-      : v
+  // Proxies a stand-in rather than `v` itself: proxy invariants forbid returning
+  // wrapped values for frozen properties, so a proxy of `v` breaks on frozen state.
+  const track = (v: unknown, path: PropertyKey[]): unknown => {
+    if (v === null || typeof v !== 'object') return v
+    const isArray = Array.isArray(v)
+    return new Proxy(isArray ? [] : {}, {
+      get: (_, k) => (k === PATH ? path : track(Reflect.get(v, k), [...path, k])),
+      has: (_, k) => k in v,
+      ownKeys: () => Reflect.ownKeys(v),
+      getPrototypeOf: () => Object.getPrototypeOf(v),
+      getOwnPropertyDescriptor: (_, k) => {
+        // An array stand-in's own `length` is non-configurable, so report it as such.
+        if (isArray && k === 'length') return { value: (v as unknown[]).length, writable: true, enumerable: false, configurable: false }
+        const d = Reflect.getOwnPropertyDescriptor(v, k)
+        return d && { ...d, configurable: true }
+      },
+    })
+  }
   let node: any
   try {
     node = narrowFn(track(state, []))

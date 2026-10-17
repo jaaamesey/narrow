@@ -24,8 +24,10 @@ export function useNewStore<T extends Container>(initial: T | (() => T)): [T, Se
  * Pass the parent's setter to get a narrowed setter. Leave it out and the
  * result is read-only: `[value]`.
  *
- * Like `useMemo`/`useCallback`, the setter is rebuilt only when `deps` change
- * (or `setStore` does). List every outside value `narrow` reads, e.g. an index.
+ * The setter is rebuilt when `setStore` or `narrow` changes, so it is always
+ * correct, and stable whenever `narrow` is (hoisted, `useCallback`, or an inline
+ * function under the React Compiler). Pass `deps` to key it on those instead,
+ * like `useMemo`: then list every outside value `narrow` reads, e.g. an index.
  */
 export function useNarrowedStore<T extends Container, N extends Container>(
   store: T,
@@ -41,9 +43,9 @@ export function useNarrowedStore<T extends Container, N extends Container>(
   store: T,
   narrow: Narrower<T, N>,
   setStore?: SetStore<T>,
-  deps: DependencyList = [],
+  deps?: DependencyList,
 ): [N] | [N, SetStore<N>] {
-  const set = useMemo(() => setStore && narrowSetter(setStore, narrow), [setStore, ...deps])
+  const set = useMemo(() => setStore && narrowSetter(setStore, narrow), deps ? [setStore, ...deps] : [setStore, narrow])
   const value = getterOf(narrow)(store)
   return set ? [value, set] : [value]
 }

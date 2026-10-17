@@ -187,13 +187,26 @@ describe('narrowing', () => {
     expect(screen.getByTestId('b').textContent).toBe('hit') // wrote to todo 1, the new target
   })
 
-  it('the narrowed setter is stable, even with an inline narrowFn', () => {
+  it('without deps, the setter follows the narrow function (never writes to a stale target)', () => {
+    function App({ i }: { i: number }) {
+      const [store, set] = useNewStore(init())
+      const [todo, setTodo] = useNarrowedStore(store, (s) => s.todos[i]!, set)
+      return <button data-testid="b" onClick={() => setTodo((t) => void (t.text = 'hit'))}>{todo.text}|{store.todos.map((t) => t.text).join()}</button>
+    }
+    const { rerender } = render(<App i={0} />)
+    rerender(<App i={1} />)
+    act(() => screen.getByTestId('b').click())
+    expect(screen.getByTestId('b').textContent).toBe('hit|a,hit,c')
+  })
+
+  it('without deps, the setter is stable when the narrow function is', () => {
     const setters = new Set<unknown>()
     let bump!: () => void
+    const first = (s: S) => s.todos[0]!
     function App() {
       const [store, set] = useNewStore(init())
       bump = () => set((s) => void (s.title += '.'))
-      const [, setTodo] = useNarrowedStore(store, (s) => s.todos[0]!, set)
+      const [, setTodo] = useNarrowedStore(store, first, set)
       setters.add(setTodo)
       return null
     }

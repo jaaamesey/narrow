@@ -224,6 +224,17 @@ describe('narrowStore', () => {
     expect(store.get()).toMatchObject({ first: 'Grace', last: 'Hopper' })
   })
 
+  it('function narrows trace through frozen state', () => {
+    const deepFreeze = <V,>(v: V): V => (Object.values(v as object).forEach((c) => c && typeof c === 'object' && deepFreeze(c)), Object.freeze(v))
+    const store = createStore(deepFreeze(init()))
+    const todo = narrowStore(store, (s) => s.todos.find((t) => t.id === 2)!)
+    todo.set((t) => void (t.done = true))
+    narrowStore(store, (s) => s.meta).set({ tags: ['x'] })
+    narrowStore(store, (s) => s.todos.filter((t) => t.done)[0]!).set((t) => void (t.text = 'via filter'))
+    expect(store.get().todos[1]).toEqual({ id: 2, text: 'via filter', done: true })
+    expect(store.get().meta.tags).toEqual(['x'])
+  })
+
   it('works with Map and Set', () => {
     const store = createStore({ m: new Map([['a', 1]]), s: new Set([1]) })
     narrowStore(store, (s) => s.m).set(new Map([['b', 2]]))
