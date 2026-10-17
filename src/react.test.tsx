@@ -313,7 +313,7 @@ describe('narrowing', () => {
           <Narrow store={store} setStore={setStore} by={{ get: (s) => s.byId.get('a')!, swap: (d, v) => void d.byId.set('a', v) }}>
             {(t, setT) => <button data-testid="narrow" onClick={() => setT((x) => void (x.text = 'narrow'))}>{t.text}</button>}
           </Narrow>
-          <entryDef.Provider arg="b"><CtxView /></entryDef.Provider>
+          <entryDef.Provider narrowArg="b"><CtxView /></entryDef.Provider>
         </mDef.Provider>
       )
     }
@@ -340,7 +340,7 @@ describe('narrowing', () => {
     render(
       <todosDef.Provider initial={init()}>
         <Root />
-        <todoDef.Provider arg={1}>
+        <todoDef.Provider narrowArg={1}>
           <TodoView />
         </todoDef.Provider>
       </todosDef.Provider>,
@@ -372,7 +372,7 @@ describe('narrowing', () => {
       <todosDef.Provider initial={init()}>
         <Root />
         {[0, 1].map((i) => (
-          <todoDef.Provider key={i} arg={i}>
+          <todoDef.Provider key={i} narrowArg={i}>
             <Reader i={i} />
             <Writer />
           </todoDef.Provider>
@@ -385,7 +385,7 @@ describe('narrowing', () => {
     expect(renders.write).toBe(2) // once per Provider, from mount only
   })
 
-  it('narrowed context follows a changing arg, for reads and writes', () => {
+  it('narrowed context follows a changing narrowArg, for reads and writes', () => {
     const todosDef = createContextStore<S>()
     const todoDef = createNarrowedStoreContext(todosDef, (s, i: number) => s.todos[i]!)
     let set!: ReturnType<typeof todoDef.useSet>
@@ -395,7 +395,7 @@ describe('narrowing', () => {
     }
     const ui = (i: number) => (
       <todosDef.Provider initial={init()}>
-        <todoDef.Provider arg={i}><View /></todoDef.Provider>
+        <todoDef.Provider narrowArg={i}><View /></todoDef.Provider>
       </todosDef.Provider>
     )
     const { rerender } = render(ui(0))

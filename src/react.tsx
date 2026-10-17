@@ -147,22 +147,23 @@ export function createContextStore<T extends Container>(fallback?: T): StoreCont
 
 /**
  * A context that is a narrowed view of another context (which can itself be
- * narrowed). `narrow` (a function or `{ get, swap }`) receives the `arg` prop given to
- * the Provider, e.g. a list index. The setter follows `arg` changes.
+ * narrowed). `narrow` (a function or `{ get, swap }`) receives the `narrowArg` prop given
+ * to the Provider as its second parameter, e.g. a list index. The setter follows
+ * `narrowArg` changes.
  *
  *   const todoDef = createNarrowedStoreContext(todosDef, (s, i: number) => s.todos[i]!)
- *   <todoDef.Provider arg={i}><TodoRow /></todoDef.Provider>
+ *   <todoDef.Provider narrowArg={i}><TodoRow /></todoDef.Provider>
  */
 export function createNarrowedStoreContext<T extends Container, N extends Container, A = void>(
   parent: ContextStore<T>,
   narrow: ((state: T, arg: A) => N) | { get: (state: T, arg: A) => N; swap: (draft: Draft<T>, value: N, arg: A) => void },
   fallback?: N,
 ): ContextStore<N> & {
-  Provider(props: { children?: ReactNode } & ([A] extends [void] ? { arg?: undefined } : { arg: A })): ReactNode
+  Provider(props: { children?: ReactNode } & ([A] extends [void] ? { narrowArg?: undefined } : { narrowArg: A })): ReactNode
 } {
   const { def, Provide } = makeContext<N>(fallback)
-  function Provider(props: { children?: ReactNode; arg?: A }) {
-    const arg = props.arg as A
+  function Provider(props: { children?: ReactNode; narrowArg?: A }) {
+    const arg = props.narrowArg as A
     const narrowed: Narrower<T, N> =
       typeof narrow === 'function'
         ? (s) => narrow(s, arg)
