@@ -16,7 +16,7 @@ setStore({ a: 1 })                        // swap
 setStore((s) => ({ ...s, a: 1 }), 'swap') // swap, with access to the current state
 ```
 
-Returning a state from a mutate recipe is a **type error**, not a runtime one. Expression-bodied assignments (`s => s.a = 1`) are fine.
+Returning an object from a mutate recipe is a **type error**, not a runtime one (return values are ignored). Only `void`/primitives may be returned, so `s => s.a = 1` is fine, but assigning an object needs braces: `s => { s.b = {…} }`.
 
 ## Context
 
@@ -54,7 +54,7 @@ const todoDef = createNarrowedStoreContext(storeDef, (s, i: number) => s.todos[i
 
 - Narrow functions must return an object/array/Map/Set (enforced by types) located *inside* the parent state. Inline functions are fine, and the narrowed setter is stable as long as the parent setter is.
 - Swapping a narrowed store replaces its contents in place (same kind only), so untouched siblings keep their identity.
-- If the target vanishes (e.g. a list item is removed before its child unmounts) reads keep returning the last value and writes are no-ops.
+- A narrowed setter for a node that no longer exists is a no-op (so a stale handler can't throw).
 
 ## Scripts
 

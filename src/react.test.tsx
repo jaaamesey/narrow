@@ -224,38 +224,43 @@ describe('narrowing', () => {
     expect(screen.getByTestId('p').textContent).toBe('c')
   })
 
-  it('a still-mounted child whose item was removed keeps its last value instead of crashing', () => {
-    let set!: SetStore<S>
-    function Item({ store, setStore }: { store: S; setStore: SetStore<S> }) {
-      const [t, setT] = useNarrowedStore(store, (s) => s.todos[2]!, setStore)
-      lastSet = setT
-      return <p data-testid="p">{t.text}</p>
-    }
-    let lastSet!: (fn: (t: Todo) => void) => void
+  it('removing an item unmounts its row without errors; a stale handler for it is a no-op', () => {
+    let setRoot!: SetStore<S>
+    let staleSet!: SetStore<Todo>
     function App() {
       const [store, setStore] = useNewStore(init())
-      set = setStore
-      return <Item store={store} setStore={setStore} />
+      setRoot = setStore
+      return (
+        <>
+          {store.todos.map((t, i) => (
+            <Narrow key={t.id} store={store} setStore={setStore} by={(s) => s.todos[i]!}>
+              {(todo, setTodo) => {
+                if (i === 2) staleSet = setTodo
+                return <p data-testid={`p${i}`}>{todo.text}</p>
+              }}
+            </Narrow>
+          ))}
+        </>
+      )
     }
     render(<App />)
-    act(() => set((s) => void s.todos.pop()))
-    expect(screen.getByTestId('p').textContent).toBe('c')
-    const after = () => lastSet((t) => void (t.text = 'nope')) // write to vanished node: no-op, no throw
-    expect(() => act(after)).not.toThrow()
+    act(() => setRoot((s) => void s.todos.pop()))
+    expect(screen.queryByTestId('p2')).toBeNull()
+    expect(() => act(() => staleSet((t) => void (t.text = 'nope')))).not.toThrow()
+    expect(screen.getByTestId('p1').textContent).toBe('b')
   })
 
   it('narrowing a narrowed value: pass the narrowed value and narrowed setter', () => {
+    type Deep = { inner: { n: number } }
     function App() {
-      const [store, set] = useNewStore(init())
-      const [todo, setTodo] = useNarrowedStore(store, (s) => s.todos[0]!, set)
-      const [text, setText] = useNarrowedStore(todo, (t) => ({ ...t }) as Todo, setTodo) // detached copy: writes are no-ops
-      void text
-      const [self, setSelf] = useNarrowedStore(todo, (t) => t, setTodo)
-      return <button data-testid="b" onClick={() => { setText((x) => void (x.text = 'ignored')); setSelf((x) => void (x.text = 'deep')) }}>{self.text}</button>
+      const [store, set] = useNewStore<Deep>({ inner: { n: 0 } })
+      const [inner, setInner] = useNarrowedStore(store, (s) => s.inner, set)
+      const [self, setSelf] = useNarrowedStore(inner, (i) => i, setInner)
+      return <button data-testid="b" onClick={() => setSelf((x) => void x.n++)}>{self.n}:{store.inner.n}</button>
     }
     render(<App />)
     act(() => screen.getByTestId('b').click())
-    expect(screen.getByTestId('b').textContent).toBe('deep')
+    expect(screen.getByTestId('b').textContent).toBe('1:1')
   })
 
   it('narrowed contexts read and write through the parent context', () => {

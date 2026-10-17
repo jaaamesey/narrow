@@ -77,11 +77,15 @@ describe('createStore setters', () => {
     const b = () => store.set((s) => ({ count: 1 }))
     // @ts-expect-error "mutate" mode must not return a state
     const c = () => store.set((s) => ({ ...s }), 'mutate')
+    // @ts-expect-error returning any object (even an unrelated one) is a forgotten swap
+    const f = () => store.set((s) => ({ unrelated: 1 }))
+    // @ts-expect-error nested object assignment as an expression body also returns an object
+    const g = () => store.set((s) => (s.meta = { tags: [] }))
     // @ts-expect-error swap value must be the full state
     const d = () => store.set({ count: 1 })
     // @ts-expect-error swap recipe must return the state, not void
     const e = () => store.set((s) => { s.count = 1 }, 'swap')
-    void [a, b, c, d, e]
+    void [a, b, c, d, e, f, g]
   })
 })
 

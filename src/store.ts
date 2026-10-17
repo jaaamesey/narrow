@@ -3,22 +3,22 @@ import { create, original, type Draft } from 'mutative'
 /** Anything a store can hold: objects and arrays (not primitives). */
 export type Container = object
 
+type Primitive = string | number | boolean | bigint | symbol | null | undefined
+
 /**
- * Return type allowed for a "mutate" recipe. Must be void-ish so that a
- * recipe that looks like a swap (`s => ({ a: 1 })`) is a type error, but
- * expression-bodied assignments (`s => (s.a = 1)`) still compile.
+ * A "mutate" recipe may only return void or a primitive (so expression-bodied
+ * assignments like `s => (s.a = 1)` compile). Returning an object is almost
+ * certainly a forgotten "swap", so it is a type error.
  */
-type MutateResult<T, R> = [R] extends [void | undefined]
+type MutateResult<R> = [R] extends [void | Primitive]
   ? R
-  : [R] extends [Partial<T>]
-    ? 'recipe returned a new state: pass "swap" as the second argument'
-    : R
+  : 'recipe returned an object: it mutates by default. Pass "swap" as the second argument to replace the state'
 
 export interface SetStore<T extends Container> {
   /** Full swap. */
   (next: T): void
   /** Fine-grained mutation (the default for functions). Must not return a new state. */
-  <R>(recipe: (draft: Draft<T>) => MutateResult<T, R>, mode?: 'mutate'): void
+  <R>(recipe: (draft: Draft<T>) => MutateResult<R>, mode?: 'mutate'): void
   /** Full swap computed from the current state. */
   (recipe: (current: T) => T, mode: 'swap'): void
 }

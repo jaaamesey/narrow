@@ -1,6 +1,7 @@
 import {
   createContext,
   useContext,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -37,15 +38,9 @@ export function useNarrowedStore<T extends Container, N extends Container>(
   setStore?: SetStore<T>,
 ): [N] | [N, SetStore<N>] {
   const fn = useRef(narrowFn)
-  fn.current = narrowFn
-  // If the target vanished (e.g. a list item was removed while its child is
-  // still mounted for one more render), keep the last value instead of crashing.
-  const last = useRef<N>(undefined as never)
-  const value = (last.current = narrowFn(store) ?? last.current)
-  const set = useMemo(
-    () => setStore && narrowSetter(setStore, (s: T) => fn.current(s)),
-    [setStore],
-  )
+  useLayoutEffect(() => void (fn.current = narrowFn))
+  const set = useMemo(() => setStore && narrowSetter(setStore, (s: T) => fn.current(s)), [setStore])
+  const value = narrowFn(store)
   return set ? [value, set] : [value]
 }
 
