@@ -49,7 +49,7 @@ type NarrowListItemProps<T extends object> = Omit<NarrowListProps<T>, 'items' | 
 
 const NarrowListItem = memo(function NarrowListItem<T extends object>({ itemKey, item, setStore, getKey, render }: NarrowListItemProps<T>) {
   const setItem = useMemo(
-    () => narrowSetter<T[], T>(setStore, (items) => items.find((x, i) => getKey(x, i) === itemKey)!),
+    () => narrowSetter<T[], T>(setStore, (items) => items.find((x, i) => getKey(x, i) === itemKey)),
     [setStore, getKey, itemKey],
   )
   return render(item, setItem)
@@ -117,7 +117,7 @@ export function createContextStore<T extends object>(fallback?: T): StoreContext
 
 export function createNarrowedStoreContext<T extends object, N extends object, A = void>(
   parent: ContextStore<T>,
-  narrow: ((state: T, arg: A) => N) | { get: (state: T, arg: A) => N; swap: (draft: Draft<T>, value: N, arg: A) => void },
+  narrow: ((state: T, arg: A) => N | undefined) | { get: (state: T, arg: A) => N | undefined; swap: (draft: Draft<T>, value: N, arg: A) => void },
   fallback?: N,
 ): ContextStore<N> & {
   Provider(props: { children?: ReactNode } & ([A] extends [void] ? { narrowArg?: undefined } : { narrowArg: A })): ReactNode

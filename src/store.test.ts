@@ -11,7 +11,7 @@ function createStore<T extends object>(initial: T) {
 }
 
 function narrowStore<T extends object, N extends object>(store: { get(): T; set: SetStore<T> }, narrow: Narrower<T, N>) {
-  return { get: () => getterOf(narrow)(store.get()), set: narrowSetter(store.set, narrow) }
+  return { get: () => getterOf(narrow)(store.get())!, set: narrowSetter(store.set, narrow) }
 }
 
 type Todo = { id: number; text: string; done: boolean }
@@ -250,6 +250,19 @@ describe('narrowStore', () => {
     const first = narrowStore(store, (s) => s.first)
     expect(first.get()).toBe(store.get().items[0])
     expect(() => first.set({ v: 2 })).toThrow(/Pass \{ get, swap \}/)
+  })
+
+  it("a bug in a narrow function surfaces as itself, not as a tracing error", () => {
+    const store = createStore(init())
+    const broken = narrowStore(store, (s) => (s as any).missing.deeper as S['meta'])
+    expect(() => broken.set((m) => void m.tags.push('x'))).toThrow(TypeError)
+  })
+
+  it('a narrow function may return undefined (e.g. find) without a non-null assertion', () => {
+    const store = createStore(init())
+    const todo = narrowStore(store, (s) => s.todos.find((t) => t.id === 2))
+    todo.set((t) => void (t.done = true))
+    expect(store.get().todos[1]!.done).toBe(true)
   })
 
   it('works with Map and Set', () => {

@@ -119,7 +119,7 @@ const settingsStore = createNarrowedStoreContext(appStore, (s) => s.settings)
 Give the narrow function a second parameter, and pass it to the Provider:
 
 ```tsx
-const todoStore = createNarrowedStoreContext(appStore, (s, id: string) => s.todos.find((t) => t.id === id)!)
+const todoStore = createNarrowedStoreContext(appStore, (s, id: string) => s.todos.find((t) => t.id === id))
 
 <todoStore.Provider narrowArg={selectedId}>…</todoStore.Provider>
 ```

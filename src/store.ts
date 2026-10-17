@@ -13,25 +13,29 @@ export interface SetStore<T extends object> {
   (recipe: (current: T) => T, mode: 'swap'): void
 }
 
+const modeOf = (next: unknown, mode?: 'mutate' | 'swap') => mode ?? (typeof next === 'function' ? 'mutate' : 'swap')
+
 export function applyUpdate<T>(prev: T, next: unknown, mode?: 'mutate' | 'swap'): T {
-  mode ??= typeof next === 'function' ? 'mutate' : 'swap'
-  if (mode === 'swap') return (typeof next === 'function' ? next(prev) : next) as T
+  if (modeOf(next, mode) === 'swap') return (typeof next === 'function' ? next(prev) : next) as T
   return create(prev, (draft) => void (next as (d: Draft<T>) => unknown)(draft))
 }
 
-export type Narrower<T, N> = ((state: T) => N) | { get: (state: T) => N; swap: (draft: Draft<T>, value: N) => void }
+export type Narrower<T, N> =
+  | ((state: T) => N | undefined)
+  | { get: (state: T) => N | undefined; swap: (draft: Draft<T>, value: N) => void }
 
 export const getterOf = <T, N>(narrow: Narrower<T, N>) => (typeof narrow === 'function' ? narrow : narrow.get)
 
 const PATH = Symbol('path')
-const untraceable = () =>
+const untraceable = (cause?: unknown) =>
   new Error(
     'narrow: could not trace narrowFn to a node inside the state (it returned a copy/computed value, ' +
       'or used an identity comparison or Map lookup). Pass { get, swap } instead.',
+    { cause },
   )
 
-// The path of keys narrowFn reads to reach the node it returns.
-function pathOf(state: object, narrowFn: (state: any) => unknown): PropertyKey[] {
+// The path of keys narrowFn reads to reach the node it returns, or null if it returns nothing.
+function pathOf(state: object, narrowFn: (state: any) => unknown): PropertyKey[] | null {
   // Proxy a stand-in, not `v`: proxy invariants forbid wrapping frozen properties.
   const track = (v: unknown, path: PropertyKey[]): unknown => {
     if (v === null || typeof v !== 'object') return v
@@ -54,13 +58,19 @@ function pathOf(state: object, narrowFn: (state: any) => unknown): PropertyKey[]
       },
     })
   }
+  // On failure, rerun narrowFn on the real state: if it fails there too, that error is narrowFn's own bug.
   let node: any
   try {
     node = narrowFn(track(state, []))
-  } catch {
+  } catch (cause) {
+    narrowFn(state)
+    throw untraceable(cause)
+  }
+  if (node == null) {
+    if (narrowFn(state) == null) return null
     throw untraceable()
   }
-  const path = node?.[PATH]
+  const path = node[PATH]
   if (!path) throw untraceable()
   return path
 }
@@ -71,17 +81,22 @@ export function narrowSetter<T extends object, N extends object>(
   parentSet: SetStore<T>,
   narrow: Narrower<T, N>,
 ): SetStore<N> {
-  const get = getterOf(narrow)
   const set = (next: unknown, mode?: 'mutate' | 'swap') =>
     parentSet((current: T) => {
-      const node = get(current)
-      // Deliberately silent: late async writes to deleted items are normal (React dropped its similar warning).
-      if (node == null) return current
-      const value = applyUpdate(node, next, mode)
-      if (value === node) return current
-      if (typeof narrow !== 'function') return create(current, (d) => void narrow.swap(d, value))
+      if (typeof narrow !== 'function') {
+        const node = narrow.get(current)
+        // Deliberately silent: late async writes to deleted items are normal (React dropped its similar warning).
+        if (node == null) return current
+        const value = applyUpdate(node, next, mode)
+        return value === node ? current : create(current, (d) => void narrow.swap(d, value))
+      }
       const path = pathOf(current, narrow)
-      if (!path.length) return value as unknown as T
+      if (!path) return current // see above
+      if (modeOf(next, mode) === 'mutate') return create(current, (d) => void (next as (d: unknown) => unknown)(getAt(d, path)))
+      const node = getAt(current, path)
+      const value = typeof next === 'function' ? next(node) : next
+      if (value === node) return current
+      if (!path.length) return value
       return create(current, (d: any) => void (getAt(d, path.slice(0, -1))[path.at(-1)!] = value))
     }, 'swap')
   return set as SetStore<N>
