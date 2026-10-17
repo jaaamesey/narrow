@@ -127,6 +127,9 @@ export function narrowSetter<T extends Container, N extends Container>(
     mode ??= typeof next === 'function' ? 'mutate' : 'swap'
     parentSet((current: T) => {
       const node = get(current)
+      // The node is gone (e.g. a list item was deleted before an async handler wrote to it).
+      // Deliberately a silent no-op, not a throw or warning: these writes come from correct code,
+      // and React removed its equivalent "update on an unmounted component" warning for the same reason.
       if (node == null) return current
       const value =
         mode === 'mutate'
