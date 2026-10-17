@@ -1,5 +1,5 @@
 export { createStore, narrowSetter } from './store'
-export type { Store, SetStore, Container } from './store'
+export type { Store, SetStore, Container, Narrower } from './store'
 export {
   useNewStore,
   useNarrowedStore,

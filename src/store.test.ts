@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createStore, narrowSetter, type Container, type SetStore } from './store'
+import { createStore, getterOf, narrowSetter, type Container, type Narrower, type SetStore } from './store'
 
 /** A read-through view of `store` for tests: value is always derived from the parent. */
-function narrowStore<T extends Container, N extends Container>(store: { get(): T; set: SetStore<T> }, fn: (s: T) => N) {
-  return { get: () => fn(store.get()), set: narrowSetter(store.set, fn) }
+function narrowStore<T extends Container, N extends Container>(store: { get(): T; set: SetStore<T> }, narrow: Narrower<T, N>) {
+  return { get: () => getterOf(narrow)(store.get()), set: narrowSetter(store.set, narrow) }
 }
 
 type Todo = { id: number; text: string; done: boolean }
@@ -183,6 +183,45 @@ describe('narrowStore', () => {
     const copy = narrowStore(store, (s) => ({ ...s.meta }))
     expect(() => copy.set((m) => void m.tags.push('x'))).toThrow(/inside the state/)
     expect(() => copy.set({ tags: [] })).toThrow(/inside the state/)
+  })
+
+  it('an untraceable function narrow (identity comparison) throws instead of silently doing nothing', () => {
+    const store = createStore(init())
+    const ref = store.get().todos[1]!
+    const todo = narrowStore(store, (s) => s.todos.find((t) => t === ref)!)
+    expect(todo.get()).toBe(ref) // reads are plain values, so identity works
+    expect(() => todo.set((t) => void (t.done = true))).toThrow(/Pass \{ get, swap \}/)
+  })
+
+  it('{ get, swap } handles identity comparisons, for mutate and swap', () => {
+    const store = createStore(init())
+    const ref = store.get().todos[1]!
+    const todo = narrowStore(store, {
+      get: (s) => s.todos.find((t) => t === ref)!,
+      swap: (d, v) => void (d.todos[d.todos.findIndex((t) => t.id === ref.id)] = v),
+    })
+    const before = store.get()
+    todo.set((t) => void (t.done = true))
+    expect(store.get().todos[1]).toEqual({ ...ref, done: true })
+    expect(store.get().todos[0]).toBe(before.todos[0])
+  })
+
+  it('{ get, swap } handles Map entries', () => {
+    const store = createStore({ byId: new Map([['a', { n: 1 }]]) })
+    const entry = narrowStore(store, { get: (s) => s.byId.get('a')!, swap: (d, v) => void d.byId.set('a', v) })
+    entry.set((e) => void e.n++)
+    entry.set((e) => ({ n: e.n * 10 }), 'swap')
+    expect(store.get().byId.get('a')).toEqual({ n: 20 })
+  })
+
+  it('{ get, swap } makes computed views writable', () => {
+    const store = createStore({ first: 'Ada', last: 'Lovelace', other: {} })
+    const name = narrowStore(store, {
+      get: (s) => ({ full: `${s.first} ${s.last}` }),
+      swap: (d, v) => void ([d.first, d.last] = v.full.split(' ') as [string, string]),
+    })
+    name.set((n) => void (n.full = 'Grace Hopper'))
+    expect(store.get()).toMatchObject({ first: 'Grace', last: 'Hopper' })
   })
 
   it('works with Map and Set', () => {

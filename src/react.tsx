@@ -7,7 +7,8 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react'
-import { createStore, narrowSetter, type Container, type SetStore } from './store'
+import type { Draft } from 'mutative'
+import { createStore, getterOf, narrowSetter, type Container, type Narrower, type SetStore } from './store'
 
 /** Like `useState`: the value re-renders the owner; the setter is stable. */
 export function useNewStore<T extends Container>(initial: T | (() => T)): [T, SetStore<T>] {
@@ -16,36 +17,38 @@ export function useNewStore<T extends Container>(initial: T | (() => T)): [T, Se
 }
 
 /**
- * Narrow `store` to the object/array `narrowFn` returns.
+ * Narrow `store` to the object/array `narrow` picks: a function like
+ * `(s) => s.todos[i]`, or `{ get, swap }` when the function can't be traced
+ * (identity comparisons, Map entries, computed views).
  *
  * Pass the parent's setter to get a narrowed setter. Leave it out and the
  * result is read-only: `[value]`.
  *
  * Like `useMemo`/`useCallback`, the setter is rebuilt only when `deps` change
- * (or `setStore` does). List every outside value `narrowFn` reads, e.g. an index.
+ * (or `setStore` does). List every outside value `narrow` reads, e.g. an index.
  */
 export function useNarrowedStore<T extends Container, N extends Container>(
   store: T,
-  narrowFn: (state: T) => N,
+  narrow: Narrower<T, N>,
 ): [N]
 export function useNarrowedStore<T extends Container, N extends Container>(
   store: T,
-  narrowFn: (state: T) => N,
+  narrow: Narrower<T, N>,
   setStore: SetStore<T>,
   deps?: DependencyList,
 ): [N, SetStore<N>]
 export function useNarrowedStore<T extends Container, N extends Container>(
   store: T,
-  narrowFn: (state: T) => N,
+  narrow: Narrower<T, N>,
   setStore?: SetStore<T>,
   deps: DependencyList = [],
 ): [N] | [N, SetStore<N>] {
-  const set = useMemo(() => setStore && narrowSetter(setStore, narrowFn), [setStore, ...deps])
-  const value = narrowFn(store)
+  const set = useMemo(() => setStore && narrowSetter(setStore, narrow), [setStore, ...deps])
+  const value = getterOf(narrow)(store)
   return set ? [value, set] : [value]
 }
 
-type NarrowProps<T extends Container, N extends Container> = { store: T; by: (state: T) => N }
+type NarrowProps<T extends Container, N extends Container> = { store: T; by: Narrower<T, N> }
 
 /**
  * Narrow in JSX; same rules as `useNarrowedStore` (no `setStore` = read-only).
@@ -142,7 +145,7 @@ export function createContextStore<T extends Container>(fallback?: T): StoreCont
 
 /**
  * A context that is a narrowed view of another context (which can itself be
- * narrowed). `narrowFn` receives the parent state and the `arg` prop given to
+ * narrowed). `narrow` (a function or `{ get, swap }`) receives the `arg` prop given to
  * the Provider, e.g. a list index. The setter follows `arg` changes.
  *
  *   const todoDef = createNarrowedStoreContext(todosDef, (s, i: number) => s.todos[i]!)
@@ -150,14 +153,19 @@ export function createContextStore<T extends Container>(fallback?: T): StoreCont
  */
 export function createNarrowedStoreContext<T extends Container, N extends Container, A = void>(
   parent: ContextStore<T>,
-  narrowFn: (state: T, arg: A) => N,
+  narrow: ((state: T, arg: A) => N) | { get: (state: T, arg: A) => N; swap: (draft: Draft<T>, value: N, arg: A) => void },
   fallback?: N,
 ): ContextStore<N> & {
   Provider(props: { children?: ReactNode } & ([A] extends [void] ? { arg?: undefined } : { arg: A })): ReactNode
 } {
   const { def, Provide } = makeContext<N>(fallback)
   function Provider(props: { children?: ReactNode; arg?: A }) {
-    const [value, set] = useNarrowedStore(parent.use(), (s) => narrowFn(s, props.arg as A), parent.useSet(), [props.arg])
+    const arg = props.arg as A
+    const narrowed: Narrower<T, N> =
+      typeof narrow === 'function'
+        ? (s) => narrow(s, arg)
+        : { get: (s) => narrow.get(s, arg), swap: (d, v) => narrow.swap(d, v, arg) }
+    const [value, set] = useNarrowedStore(parent.use(), narrowed, parent.useSet(), [arg])
     return <Provide value={value} set={set}>{props.children}</Provide>
   }
   return { ...def, Provider }

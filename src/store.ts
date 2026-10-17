@@ -56,53 +56,65 @@ export function createStore<T extends Container>(initial: T): Store<T> {
   }
 }
 
-const PATH = Symbol('path')
-
 /**
- * Run `narrowFn` against a proxy that records which keys it reads, and return
- * the path to the node it picked. `undefined` if the node is gone; throws if
- * `narrowFn` returned something that isn't a node inside the state (a copy).
+ * How to narrow a store: a function that walks to a node inside the state
+ * (its path is traced automatically), or an explicit `{ get, swap }` for cases
+ * the tracer can't follow (identity comparisons, Map entries, computed views).
  */
-function pathOf(state: object, narrowFn: (state: any) => unknown): PropertyKey[] | undefined {
+export type Narrower<T, N> = ((state: T) => N) | { get: (state: T) => N; swap: (draft: Draft<T>, value: N) => void }
+
+export const getterOf = <T, N>(narrow: Narrower<T, N>) => (typeof narrow === 'function' ? narrow : narrow.get)
+
+const PATH = Symbol('path')
+const untraceable = () =>
+  new Error(
+    'narrow: could not trace narrowFn to a node inside the state (it returned a copy/computed value, ' +
+      'or used an identity comparison or Map lookup). Pass { get, swap } instead.',
+  )
+
+/** Run `narrowFn` against a proxy that records the keys it reads; return the path to the node it picked. */
+function pathOf(state: object, narrowFn: (state: any) => unknown): PropertyKey[] {
   const track = (v: unknown, path: PropertyKey[]): unknown =>
     v !== null && typeof v === 'object'
       ? new Proxy(v, { get: (t, k) => (k === PATH ? path : track(Reflect.get(t, k), [...path, k])) })
       : v
-  const node = narrowFn(track(state, [])) as any
-  if (node == null) return undefined
-  const path = node[PATH]
-  if (!path) throw new Error('narrow: narrowFn must return a node inside the state, not a copy or a computed value')
+  let node: any
+  try {
+    node = narrowFn(track(state, []))
+  } catch {
+    throw untraceable()
+  }
+  const path = node?.[PATH]
+  if (!path) throw untraceable()
   return path
 }
 
 const getAt = (v: any, path: PropertyKey[]) => path.reduce((o, k) => o[k], v)
 
 /**
- * Turn a parent setter into a setter for the node `narrowFn` picks out of the
+ * Turn a parent setter into a setter for the node `narrow` picks out of the
  * parent state. Writes to a node that no longer exists are no-ops.
  */
 export function narrowSetter<T extends Container, N extends Container>(
   parentSet: SetStore<T>,
-  narrowFn: (state: T) => N | undefined,
+  narrow: Narrower<T, N>,
 ): SetStore<N> {
+  const get = getterOf(narrow)
   const set = (next: unknown, mode?: 'mutate' | 'swap') => {
     mode ??= typeof next === 'function' ? 'mutate' : 'swap'
-    if (mode === 'mutate') {
-      parentSet((draft: Draft<T>) => {
-        const path = pathOf(draft, narrowFn)
-        if (path) (next as (d: unknown) => unknown)(getAt(draft, path))
-      })
-    } else {
-      parentSet((current: T) => {
-        const path = pathOf(current, narrowFn)
-        if (!path) return current
-        const node = getAt(current, path)
-        const value = typeof next === 'function' ? next(node) : next
-        if (value === node) return current
-        if (!path.length) return value
-        return create(current, (d: any) => void (getAt(d, path.slice(0, -1))[path.at(-1)!] = value))
-      }, 'swap')
-    }
+    parentSet((current: T) => {
+      const node = get(current)
+      if (node == null) return current
+      const value =
+        mode === 'mutate'
+          ? create(node, (d) => void (next as (d: unknown) => unknown)(d))
+          : typeof next === 'function' ? next(node) : next
+      if (value === node) return current
+      if (typeof narrow !== 'function') return create(current, (d) => void narrow.swap(d, value))
+      const path = pathOf(current, narrow)
+      if (!path.length) return value
+      return create(current, (d: any) => void (getAt(d, path.slice(0, -1))[path.at(-1)!] = value))
+    }, 'swap')
   }
   return set as SetStore<N>
 }

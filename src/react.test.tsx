@@ -282,6 +282,35 @@ describe('narrowing', () => {
     expect(screen.getByTestId('b').textContent).toBe('1:1')
   })
 
+  it('<Narrow> and narrowed contexts accept { get, swap }', () => {
+    type M = { byId: Map<string, Todo> }
+    const mDef = createContextStore<M>()
+    const entryDef = createNarrowedStoreContext(mDef, {
+      get: (s, id: string) => s.byId.get(id)!,
+      swap: (d, v, id) => void d.byId.set(id, v),
+    })
+    function CtxView() {
+      const set = entryDef.useSet()
+      return <button data-testid="ctx" onClick={() => set((t) => void (t.text = 'ctx'))}>{entryDef.use().text}</button>
+    }
+    function App() {
+      const [store, setStore] = useNewStore<M>({ byId: new Map([['a', { id: 1, text: 'a', done: false }], ['b', { id: 2, text: 'b', done: false }]]) })
+      return (
+        <mDef.Provider store={store} setStore={setStore}>
+          <Narrow store={store} setStore={setStore} by={{ get: (s) => s.byId.get('a')!, swap: (d, v) => void d.byId.set('a', v) }}>
+            {(t, setT) => <button data-testid="narrow" onClick={() => setT((x) => void (x.text = 'narrow'))}>{t.text}</button>}
+          </Narrow>
+          <entryDef.Provider arg="b"><CtxView /></entryDef.Provider>
+        </mDef.Provider>
+      )
+    }
+    render(<App />)
+    act(() => screen.getByTestId('narrow').click())
+    act(() => screen.getByTestId('ctx').click())
+    expect(screen.getByTestId('narrow').textContent).toBe('narrow')
+    expect(screen.getByTestId('ctx').textContent).toBe('ctx')
+  })
+
   it('narrowed contexts read and write through the parent context', () => {
     const todosDef = createContextStore<S>()
     const todoDef = createNarrowedStoreContext(todosDef, (s, i: number) => s.todos[i]!)
