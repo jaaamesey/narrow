@@ -168,14 +168,13 @@ describe('narrowing', () => {
     expect(screen.getByTestId('ro').textContent).toBe('aundefined')
   })
 
-  it('the narrowed setter is stable when narrowFn is', () => {
+  it('the narrowed setter is stable, even with an inline narrowFn', () => {
     const setters = new Set<unknown>()
     let bump!: () => void
-    const pick = (s: S) => s.todos[0]!
     function App() {
       const [store, set] = useNewStore(init())
       bump = () => set((s) => void (s.title += '.'))
-      const [, setTodo] = useNarrowedStore(store, pick, set)
+      const [, setTodo] = useNarrowedStore(store, (s) => s.todos[0]!, set)
       setters.add(setTodo)
       return null
     }
@@ -325,7 +324,7 @@ describe('narrowing', () => {
     expect(renders.write).toBe(2) // once per Provider, from mount only
   })
 
-  it('narrowed context follows a changing arg', () => {
+  it('narrowed context re-targets when remounted with a new key/arg', () => {
     const todosDef = createContextStore<S>()
     const todoDef = createNarrowedStoreContext(todosDef, (s, i: number) => s.todos[i]!)
     function View() {
@@ -333,7 +332,7 @@ describe('narrowing', () => {
     }
     const ui = (i: number) => (
       <todosDef.Provider initial={init()}>
-        <todoDef.Provider arg={i}><View /></todoDef.Provider>
+        <todoDef.Provider key={i} arg={i}><View /></todoDef.Provider>
       </todosDef.Provider>
     )
     const { rerender } = render(ui(0))

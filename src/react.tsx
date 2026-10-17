@@ -1,8 +1,6 @@
 import {
   createContext,
-  useCallback,
   useContext,
-  useMemo,
   useState,
   useSyncExternalStore,
   type ReactNode,
@@ -18,9 +16,12 @@ export function useNewStore<T extends Container>(initial: T | (() => T)): [T, Se
 /**
  * Narrow `store` to the object/array `narrowFn` returns.
  *
- * Pass the parent's setter to get a narrowed setter (stable as long as
- * `setStore` and `narrowFn` are). Leave it out and the result is read-only:
- * `[value]`. Wrap `narrowFn` in `useCallback` if you need a stable setter.
+ * Pass the parent's setter to get a (stable) narrowed setter. Leave it out
+ * and the result is read-only: `[value]`.
+ *
+ * `narrowFn` and `setStore` are read once, on mount, and must not change for
+ * the life of the component. If the target depends on a prop (an id or index),
+ * give the component a `key` so it remounts when that changes.
  */
 export function useNarrowedStore<T extends Container, N extends Container>(
   store: T,
@@ -36,9 +37,9 @@ export function useNarrowedStore<T extends Container, N extends Container>(
   narrowFn: (state: T) => N,
   setStore?: SetStore<T>,
 ): [N] | [N, SetStore<N>] {
-  const set = useMemo(() => setStore && narrowSetter(setStore, narrowFn), [setStore, narrowFn])
-  const value = narrowFn(store)
-  return set ? [value, set] : [value]
+  const [narrowed] = useState(() => ({ fn: narrowFn, set: setStore && narrowSetter(setStore, narrowFn) }))
+  const value = narrowed.fn(store)
+  return narrowed.set ? [value, narrowed.set] : [value]
 }
 
 type NarrowProps<T extends Container, N extends Container> = { store: T; by: (state: T) => N }
@@ -138,7 +139,8 @@ export function createContextStore<T extends Container>(fallback?: T): StoreCont
 /**
  * A context that is a narrowed view of another context (which can itself be
  * narrowed). `narrowFn` receives the parent state and the `arg` prop given to
- * the Provider, e.g. a list index:
+ * the Provider, e.g. a list index. `arg` is read once: to change it, remount
+ * the Provider with a `key`.
  *
  *   const todoDef = createNarrowedStoreContext(todosDef, (s, i: number) => s.todos[i]!)
  *   <todoDef.Provider arg={i}><TodoRow /></todoDef.Provider>
@@ -152,8 +154,7 @@ export function createNarrowedStoreContext<T extends Container, N extends Contai
 } {
   const { def, Provide } = makeContext<N>(fallback)
   function Provider(props: { children?: ReactNode; arg?: A }) {
-    const by = useCallback((s: T) => narrowFn(s, props.arg as A), [props.arg])
-    const [value, set] = useNarrowedStore(parent.use(), by, parent.useSet())
+    const [value, set] = useNarrowedStore(parent.use(), (s) => narrowFn(s, props.arg as A), parent.useSet())
     return <Provide value={value} set={set}>{props.children}</Provide>
   }
   return { ...def, Provider }
