@@ -75,25 +75,23 @@ const todoStore = createNarrowedStoreContext(appStore, (s, id: string) => s.todo
 
 ## How other libraries compare
 
-**`useState`/`useReducer` + context**
-- **Strengths:** built in.
-- **Drawbacks:** nested updates need spreads or reducers, and context re-renders every consumer.
+Each comparison uses the same example: a `TodoItem` row that toggles its todo.
+
+**`useState` + context**
+- The state's owner does the update, `setState((s) => ({ ...s, todos: s.todos.map((t) => (t.id === id ? { ...t, done: !t.done } : t)) }))`, and passes a callback down to each row. Every context consumer re-renders on every change.
+- With `narrow`, the row gets `setTodo` and writes `t.done = !t.done`. Only that row re-renders.
 
 **Zustand**
-- **Strengths:** tiny, has devtools, works outside React.
-- **Drawbacks:** components select by path (`s => s.todos[i].done`), which couples them to the store's shape.
-
-**Redux Toolkit**
-- **Strengths:** devtools with time travel, middleware, RTK Query.
-- **Drawbacks:** more ceremony (slices, actions, selectors), and a single global store.
+- The row needs the todo's id and has to know where todos live in the global store: `useStore((s) => s.todos.find((t) => t.id === id))`, plus a `toggle(id)` action. In exchange, the store is global: any component, or code outside React, can use it without a Provider.
+- With `narrow`, the row receives `todo` and `setTodo` and knows nothing else. It works with any store that holds a `Todo`, which makes it easy to reuse and test.
 
 **Jotai**
-- **Strengths:** fine-grained atoms. `splitAtom` and `focusAtom` work much like narrowing.
-- **Drawbacks:** state is modelled as atoms rather than one plain tree, and `focusAtom` needs `jotai-optics`.
+- `splitAtom` gives each row its own writable atom, much like `NarrowList`, and `focusAtom` (from `jotai-optics`) narrows into an atom. State is modelled as atoms, which suits many independent or async-derived values.
+- `narrow` keeps one plain object tree and narrows it with plain functions.
 
 **MobX / Valtio**
-- **Strengths:** mutate anywhere, with automatic fine-grained re-renders.
-- **Drawbacks:** state lives in observables or proxies, not plain objects.
+- You pass `state.todos[i]` to the row and mutate it directly. The library tracks which properties each component reads and re-renders it when they change.
+- `narrow` gives the same "pass the piece down and write to it" style, but state stays plain, immutable React state, and writes go through an explicit setter.
 
 **Where `narrow` is weaker:** it's new and React-only, with no devtools or middleware, and its stores live in the component tree rather than at module level.
 
