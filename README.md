@@ -6,6 +6,8 @@ If you've used `useImmer`, the mutation part is familiar. `narrow` adds what com
 
 No global store, no selectors, no actions. State is plain data that lives in your component tree and flows through props and context, so React and the React Compiler treat it like any other state. Writes go through [Mutative](https://github.com/unadlib/mutative), which turns your mutations into immutable updates.
 
+> **Early days:** `narrow` isn't published yet, and the API may change. Found a bug, or a case it doesn't handle? [Open an issue](https://github.com/jaaamesey/narrow/issues).
+
 ```tsx
 // Before: rebuild every level by hand
 setState((s) => ({
