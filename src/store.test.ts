@@ -156,10 +156,33 @@ describe('narrowStore', () => {
     expect(store.get()).toBe(before)
   })
 
-  it('refuses to swap in a value of a different kind', () => {
-    const store = createStore({ list: [1] as any })
-    const list = narrowStore(store, (s) => s.list)
-    expect(() => list.set({ not: 'an array' })).toThrow(/same kind/)
+  it('swap really replaces the node, even with a different kind of value', () => {
+    const store = createStore({ slot: [1, 2] as unknown as object, other: { keep: 1 } })
+    const before = store.get()
+    narrowStore(store, (s) => s.slot).set({ now: 'an object' })
+    expect(store.get().slot).toEqual({ now: 'an object' })
+    expect(store.get().other).toBe(before.other)
+  })
+
+  it('swapping the whole state through an identity narrow replaces the parent state', () => {
+    const store = createStore(init())
+    narrowStore(store, (s) => s).set((s) => ({ ...s, count: 42 }), 'swap')
+    expect(store.get().count).toBe(42)
+  })
+
+  it('narrowing with find() targets the matching node', () => {
+    const store = createStore(init())
+    const todo = narrowStore(store, (s) => s.todos.find((t) => t.id === 2)!)
+    todo.set({ id: 2, text: 'swapped', done: true })
+    todo.set((t) => void (t.text += '!'))
+    expect(store.get().todos[1]).toEqual({ id: 2, text: 'swapped!', done: true })
+  })
+
+  it('throws instead of silently dropping writes when narrowFn returns a copy', () => {
+    const store = createStore(init())
+    const copy = narrowStore(store, (s) => ({ ...s.meta }))
+    expect(() => copy.set((m) => void m.tags.push('x'))).toThrow(/inside the state/)
+    expect(() => copy.set({ tags: [] })).toThrow(/inside the state/)
   })
 
   it('works with Map and Set', () => {

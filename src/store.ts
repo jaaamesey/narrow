@@ -1,4 +1,4 @@
-import { create, original, type Draft } from 'mutative'
+import { create, type Draft } from 'mutative'
 
 /** Anything a store can hold: objects and arrays (not primitives). */
 export type Container = object
@@ -56,10 +56,30 @@ export function createStore<T extends Container>(initial: T): Store<T> {
   }
 }
 
+const PATH = Symbol('path')
+
+/**
+ * Run `narrowFn` against a proxy that records which keys it reads, and return
+ * the path to the node it picked. `undefined` if the node is gone; throws if
+ * `narrowFn` returned something that isn't a node inside the state (a copy).
+ */
+function pathOf(state: object, narrowFn: (state: any) => unknown): PropertyKey[] | undefined {
+  const track = (v: unknown, path: PropertyKey[]): unknown =>
+    v !== null && typeof v === 'object'
+      ? new Proxy(v, { get: (t, k) => (k === PATH ? path : track(Reflect.get(t, k), [...path, k])) })
+      : v
+  const node = narrowFn(track(state, [])) as any
+  if (node == null) return undefined
+  const path = node[PATH]
+  if (!path) throw new Error('narrow: narrowFn must return a node inside the state, not a copy or a computed value')
+  return path
+}
+
+const getAt = (v: any, path: PropertyKey[]) => path.reduce((o, k) => o[k], v)
+
 /**
  * Turn a parent setter into a setter for the node `narrowFn` picks out of the
- * parent state. `narrowFn` is applied to the parent's draft, so it must return
- * a node *inside* the state. Writes to a node that no longer exists are no-ops.
+ * parent state. Writes to a node that no longer exists are no-ops.
  */
 export function narrowSetter<T extends Container, N extends Container>(
   parentSet: SetStore<T>,
@@ -67,39 +87,22 @@ export function narrowSetter<T extends Container, N extends Container>(
 ): SetStore<N> {
   const set = (next: unknown, mode?: 'mutate' | 'swap') => {
     mode ??= typeof next === 'function' ? 'mutate' : 'swap'
-    parentSet((draft: Draft<T>) => {
-      const target = narrowFn(draft as T)
-      if (target == null) return
-      if (mode === 'mutate') {
-        ;(next as (d: unknown) => unknown)(target)
-      } else {
-        const current = original(target) ?? target
-        replaceInPlace(target, typeof next === 'function' ? next(current) : next)
-      }
-    })
+    if (mode === 'mutate') {
+      parentSet((draft: Draft<T>) => {
+        const path = pathOf(draft, narrowFn)
+        if (path) (next as (d: unknown) => unknown)(getAt(draft, path))
+      })
+    } else {
+      parentSet((current: T) => {
+        const path = pathOf(current, narrowFn)
+        if (!path) return current
+        const node = getAt(current, path)
+        const value = typeof next === 'function' ? next(node) : next
+        if (value === node) return current
+        if (!path.length) return value
+        return create(current, (d: any) => void (getAt(d, path.slice(0, -1))[path.at(-1)!] = value))
+      }, 'swap')
+    }
   }
   return set as SetStore<N>
-}
-
-/** Make `target` (a draft) structurally equal to `next` without replacing the node. */
-function replaceInPlace(target: any, next: any) {
-  if (target === next) return
-  if (Array.isArray(target) && Array.isArray(next)) {
-    target.length = next.length
-    next.forEach((v, i) => (target[i] = v))
-  } else if (target instanceof Map && next instanceof Map) {
-    target.clear()
-    next.forEach((v, k) => target.set(k, v))
-  } else if (target instanceof Set && next instanceof Set) {
-    target.clear()
-    next.forEach((v) => target.add(v))
-  } else if (
-    Object.getPrototypeOf(target) === Object.getPrototypeOf(next) &&
-    !(target instanceof Map || target instanceof Set || Array.isArray(target))
-  ) {
-    for (const k of Object.keys(target)) if (!(k in next)) delete target[k]
-    Object.assign(target, next)
-  } else {
-    throw new TypeError('narrow: a narrowed store can only be swapped for a value of the same kind (object/array/Map/Set)')
-  }
 }

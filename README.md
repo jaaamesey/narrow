@@ -55,7 +55,7 @@ const todoDef = createNarrowedStoreContext(storeDef, (s, i: number) => s.todos[i
 ```
 
 - Narrow functions must return an object/array/Map/Set (enforced by types) located *inside* the parent state. The narrowed setter is stable. If `narrowFn` reads an outside value (an id/index), pass it in a deps array like `useMemo`: `useNarrowedStore(store, (s) => s.todos[i]!, setStore, [i])` or `<Narrow … deps={[i]}>`. Narrowed contexts follow their `arg` automatically.
-- Swapping a narrowed store replaces its contents in place (same kind only), so untouched siblings keep their identity.
+- Writes find the node by running `narrowFn` once against a proxy that records the keys it reads, then write at that path, so a swap really replaces the node and untouched siblings keep their identity. Lookups like `s.todos.find((t) => t.id === id)` work; a `narrowFn` that returns a copy or computed value throws on write. You can narrow *to* a Map/Set but not *into* one (`m.get(k)`).
 - A narrowed setter for a node that no longer exists is a no-op (so a stale handler can't throw).
 
 ## Scripts
