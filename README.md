@@ -75,32 +75,27 @@ const todoStore = createNarrowedStoreContext(appStore, (s, id: string) => s.todo
 
 ## How other libraries compare
 
-**`useState`/`useReducer` + context** (built in)
-- **Strengths:** No dependency.
-- **Drawbacks:** Updating nested data means hand-written spreads or reducers. Context re-renders every consumer on any change.
-- **With `narrow`:** the same model (plain values, top-down, context), plus mutations, scoped setters and per-slice re-renders.
+**`useState`/`useReducer` + context**
+- **Strengths:** built in.
+- **Drawbacks:** nested updates need spreads or reducers, and context re-renders every consumer.
 
-**Zustand** (the most popular)
-- **Strengths:** Tiny, mature, devtools and middleware, and it works outside React.
-- **Drawbacks:** Components subscribe with selectors that know the store's shape (`s => s.todos[i].done`). Reusable components need paths or ids passed in, and selectors that build new objects need `useShallow`.
-- **With `narrow`:** no selectors. A component gets its slice and a setter, and never sees the global shape.
+**Zustand**
+- **Strengths:** tiny, has devtools, works outside React.
+- **Drawbacks:** components select by path (`s => s.todos[i].done`), which couples them to the store's shape.
 
 **Redux Toolkit**
-- **Strengths:** Predictable actions and reducers, excellent devtools (time travel), middleware and RTK Query. Uses Immer, like `narrow` uses Mutative.
-- **Drawbacks:** More ceremony (slices, actions, selectors) and one global store.
-- **With `narrow`:** no actions, and no devtools. Writes are direct and scoped.
+- **Strengths:** devtools with time travel, middleware, RTK Query.
+- **Drawbacks:** more ceremony (slices, actions, selectors), and a single global store.
 
 **Jotai**
-- **Strengths:** Atoms are fine-grained by design. `focusAtom` and `splitAtom` are its version of narrowing.
-- **Drawbacks:** State is split across many atoms. Focusing needs an optics library and a different mental model.
-- **With `narrow`:** one plain object tree, narrowed with ordinary functions.
+- **Strengths:** fine-grained atoms. `splitAtom` and `focusAtom` work much like narrowing.
+- **Drawbacks:** state is modelled as atoms rather than one plain tree, and `focusAtom` needs `jotai-optics`.
 
-**MobX / Valtio** (mutable proxies)
-- **Strengths:** Mutate anywhere. Re-renders are tracked automatically, and passing a sub-object around is narrowing for free.
-- **Drawbacks:** State lives in observables/proxies rather than plain objects, so you rely on the library's tracking instead of React's normal rendering.
-- **With `narrow`:** plain immutable values that React and the React Compiler handle natively.
+**MobX / Valtio**
+- **Strengths:** mutate anywhere, with automatic fine-grained re-renders.
+- **Drawbacks:** state lives in observables or proxies, not plain objects.
 
-**Where `narrow` is weaker:** it's new and React-only, with no devtools, middleware or time travel. A store lives inside your component tree, not at module level, and some narrow functions need an explicit `{ get, swap }`. For server data, use a data-fetching library such as TanStack Query alongside any of these.
+**Where `narrow` is weaker:** it's new and React-only, with no devtools or middleware, and its stores live in the component tree rather than at module level.
 
 ## Example
 
