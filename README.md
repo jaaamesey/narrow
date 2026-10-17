@@ -96,7 +96,7 @@ const settingsStore = createNarrowedStoreContext(appStore, (s) => s.settings)
 
 ### Over useState and context
 
-- Nested updates are one line, not a spread at every level
+- Nested updates are a one-line mutation, not a spread at every level
 - Components get their slice of the state and a setter for it, not all of it
 - Value and setter come in separate contexts, so components that only write don't re-render, without splitting contexts by hand
 
@@ -104,7 +104,7 @@ const settingsStore = createNarrowedStoreContext(appStore, (s) => s.settings)
 
 - Hand a child its slice and a setter that writes back, instead of the parent's whole state or a callback for every kind of edit
 - Context stores are built in, including narrowed contexts that only re-render for their slice
-- `NarrowList` re-renders only the list items that changed (requires the React Compiler, or a `useCallback`)
+- `NarrowList` gives every list item its own stable setter, so unchanged items skip re-rendering (requires the React Compiler, or a `useCallback`). With `useImmer`, you'd pass ids and stable callbacks by hand
 
 ### Over Zustand, Jotai or Valtio
 
