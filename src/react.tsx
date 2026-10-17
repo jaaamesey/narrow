@@ -7,7 +7,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react'
-import { createStore, narrowSetter, type Container, type SetStore, type Store } from './store'
+import { createStore, narrowSetter, type Container, type SetStore } from './store'
 
 /** Like `useState`: the value re-renders the owner; the setter is stable. */
 export function useNewStore<T extends Container>(initial: T | (() => T)): [T, SetStore<T>] {
@@ -68,7 +68,7 @@ export function Narrow(props: any) {
 export interface ContextStore<T extends Container> {
   /** The current value; re-renders on change. */
   use(): T
-  /** Stable setter; never re-renders the caller. */
+  /** Stable setter; never re-renders the caller. Throws when called if only a default is available. */
   useSet(): SetStore<T>
 }
 
@@ -83,28 +83,31 @@ export interface StoreContext<T extends Container> extends ContextStore<T> {
 
 const NONE = Symbol('no provider')
 
-/** Value and setter live in separate contexts so setter-only consumers never re-render. */
+const readOnlyDefault = (() => {
+  throw new Error('narrow: no store in context; the default value is read-only')
+}) as SetStore<any>
+
+/**
+ * Value and setter live in separate contexts so setter-only consumers never
+ * re-render. Like React's `createContext(default)`, `fallback` is a plain
+ * read-only value used when no Provider is above.
+ */
 function makeContext<T extends Container>(fallback?: T) {
   const ValueCtx = createContext<T | typeof NONE>(NONE)
   const SetCtx = createContext<SetStore<T> | typeof NONE>(NONE)
-  let fb: Store<T> | undefined
-  const fallbackStore = () => (fb ??= createStore(fallback!))
   const missing = () => new Error('narrow: no store found in context and no default was given')
 
   const def: ContextStore<T> = {
     use() {
       const value = useContext(ValueCtx)
-      // Subscribing is unconditional (hooks), but only to the default store, and only if one exists.
-      const s = fallback !== undefined ? fallbackStore() : undefined
-      const dflt = useSyncExternalStore(s?.subscribe ?? noopSubscribe, s?.get ?? noopGet, s?.get ?? noopGet)
       if (value !== NONE) return value
-      if (s) return dflt as T
+      if (fallback !== undefined) return fallback
       throw missing()
     },
     useSet() {
       const set = useContext(SetCtx)
       if (set !== NONE) return set
-      if (fallback !== undefined) return fallbackStore().set
+      if (fallback !== undefined) return readOnlyDefault
       throw missing()
     },
   }
@@ -115,10 +118,8 @@ function makeContext<T extends Container>(fallback?: T) {
   )
   return { def, Provide }
 }
-const noopSubscribe = () => () => {}
-const noopGet = () => undefined
 
-/** `fallback` is used (as one shared store) when no provider is above. */
+/** `fallback` is a read-only value returned by `use()` when no Provider is above. */
 export function createContextStore<T extends Container>(fallback?: T): StoreContext<T> {
   const { def, Provide } = makeContext<T>(fallback)
   function Owned(p: { initial: T | (() => T); children?: ReactNode }) {

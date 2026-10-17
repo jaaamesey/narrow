@@ -21,7 +21,7 @@ Returning an object from a mutate recipe is a **type error**, not a runtime one 
 ## Context
 
 ```tsx
-const storeDef = createContextStore<State>(/* optional default */)
+const storeDef = createContextStore<State>(/* optional default value */)
 
 <storeDef.Provider initial={...}>                       {/* own a new store */}
 <storeDef.Provider store={store} setStore={setStore}>   {/* share one from useNewStore */}
@@ -30,6 +30,8 @@ const setStore = storeDef.useSet()  // stable, never re-renders
 ```
 
 Value and setter live in separate React contexts, so setter-only consumers never re-render.
+
+Without a Provider, `use()` returns the default value, like React's `createContext(default)`. It's read-only: calling the setter throws. With no default, both hooks throw.
 
 ## Narrowing
 

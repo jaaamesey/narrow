@@ -109,7 +109,7 @@ describe('context store', () => {
     expect(screen.getByTestId('title').textContent).toBe('from owner')
   })
 
-  it('throws without a provider or default; uses a shared default when given', () => {
+  it('throws without a provider or default', () => {
     const err = console.error
     console.error = () => {}
     try {
@@ -117,17 +117,18 @@ describe('context store', () => {
     } finally {
       console.error = err
     }
+  })
 
+  it('without a provider, the default is a read-only value (not a shared store)', () => {
     const withDefault = createContextStore<S>(init())
     let set!: typeof setStore
-    function Reader({ id }: { id: string }) {
-      set = withDefault.useSet()
-      return <div data-testid={id}>{withDefault.use().title}</div>
+    function Reader() {
+      set = withDefault.useSet() // obtaining the setter is fine...
+      return <div data-testid="r">{withDefault.use().title}</div>
     }
-    render(<><Reader id="one" /><Reader id="two" /></>)
-    act(() => set((s) => void (s.title = 'shared')))
-    expect(screen.getByTestId('one').textContent).toBe('shared')
-    expect(screen.getByTestId('two').textContent).toBe('shared')
+    render(<Reader />)
+    expect(screen.getByTestId('r').textContent).toBe('t')
+    expect(() => set((s) => void (s.title = 'x'))).toThrow(/read-only/) // ...calling it is not
   })
 
   it('a provider overrides the default', () => {
