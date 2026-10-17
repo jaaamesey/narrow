@@ -282,6 +282,21 @@ describe('narrowing', () => {
     expect(screen.getByTestId('p1').textContent).toBe('b')
   })
 
+  it('reading a missing node throws', () => {
+    function App() {
+      const [store] = useNewStore(init())
+      useNarrowedStore(store, (s) => s.todos[99]!)
+      return null
+    }
+    const err = console.error
+    console.error = () => {}
+    try {
+      expect(() => render(<App />)).toThrow(/narrowed node is missing/)
+    } finally {
+      console.error = err
+    }
+  })
+
   it('narrowing a narrowed value: pass the narrowed value and narrowed setter', () => {
     type Deep = { inner: { n: number } }
     function App() {

@@ -47,6 +47,9 @@ export function useNarrowedStore<T extends Container, N extends Container>(
 ): [N] | [N, SetStore<N>] {
   const set = useMemo(() => setStore && narrowSetter(setStore, narrow), deps ? [setStore, ...deps] : [setStore, narrow])
   const value = getterOf(narrow)(store)
+  // With top-down rendering a removed node's component unmounts in the same pass,
+  // so reaching this means something still renders a node that no longer exists.
+  if (value == null) throw new Error('narrow: the narrowed node is missing (narrow returned null/undefined)')
   return set ? [value, set] : [value]
 }
 
