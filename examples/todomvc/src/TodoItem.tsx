@@ -1,18 +1,18 @@
-import { memo, useState } from 'react'
-import { todoDef } from './store'
+import { useState } from 'react'
+import type { SetStore } from 'narrow'
+import type { Todo } from './store'
 
 /**
- * A single todo. It reads and writes its own todo through `todoDef` and knows
- * nothing about the rest of the app: no ids to look up, no list to search.
+ * A single todo, narrowed out of the app state by `<NarrowList>`.
  *
- * `memo` keeps it from re-rendering just because the list re-rendered, so it
- * only re-renders when its own todo changes (or `onDestroy` does, which is stable).
- * It's needed even with the React Compiler, which creates new elements for each
- * call of a `.map` callback.
+ * Encapsulation: it only ever sees one `Todo` and a setter for that todo. It
+ * doesn't know the app's state shape and can't touch any other todo.
+ *
+ * Performance: editing this todo re-renders only this component. Other todos
+ * keep their identity (structural sharing) and stable setters, so `NarrowList`
+ * skips them. No `memo` needed.
  */
-export const TodoItem = memo(function TodoItem({ onDestroy }: { onDestroy: (id: string) => void }) {
-  const todo = todoDef.useVal()
-  const setTodo = todoDef.useSet()
+export function TodoItem({ todo, setTodo, onDestroy }: { todo: Todo; setTodo: SetStore<Todo>; onDestroy: (id: string) => void }) {
   const [editing, setEditing] = useState(false)
 
   const finishEditing = (input: HTMLInputElement) => {
@@ -57,4 +57,4 @@ export const TodoItem = memo(function TodoItem({ onDestroy }: { onDestroy: (id: 
       )}
     </li>
   )
-})
+}

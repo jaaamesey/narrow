@@ -1,6 +1,7 @@
-import { useCallback, useEffect } from 'react'
+import { useEffect } from 'react'
+import { NarrowList, useNarrowedStore } from 'narrow'
 import { TodoItem } from './TodoItem'
-import { loadState, saveState, todoDef, todosDef, useFilter, type Filter } from './store'
+import { loadState, saveState, todosDef, useFilter, type Filter } from './store'
 
 /**
  * The provider owns the store, so `App` itself never re-renders: only the
@@ -55,19 +56,16 @@ function Header() {
 }
 
 function Main() {
-  const { todos } = todosDef.useVal()
-  const setTodos = todosDef.useSet()
+  const state = todosDef.useVal()
+  const setState = todosDef.useSet()
+  const [todos, setTodos] = useNarrowedStore(state, (s) => s.todos, setState)
   const filter = useFilter()
-  // Stable for the life of the app, so it doesn't defeat TodoItem's `memo`.
-  const destroy = useCallback(
-    (id: string) =>
-      setTodos((s) => {
-        s.todos = s.todos.filter((t) => t.id !== id)
-      }),
-    [setTodos],
-  )
   if (!todos.length) return null
 
+  const destroy = (id: string) =>
+    setTodos((ts) => {
+      ts.splice(ts.findIndex((t) => t.id === id), 1)
+    })
   const allCompleted = todos.every((t) => t.completed)
   const visible = todos.filter((t) => filter === 'all' || t.completed === (filter === 'completed'))
   return (
@@ -78,19 +76,18 @@ function Main() {
         type="checkbox"
         checked={allCompleted}
         onChange={() =>
-          setTodos((s) => {
-            for (const t of s.todos) t.completed = !allCompleted
+          setTodos((ts) => {
+            for (const t of ts) t.completed = !allCompleted
           })
         }
       />
       <label htmlFor="toggle-all">Mark all as complete</label>
       <ul className="todo-list">
-        {visible.map((t) => (
-          // Narrow the app state to this one todo for everything inside.
-          <todoDef.Provider key={t.id} narrowArg={t.id}>
-            <TodoItem onDestroy={destroy} />
-          </todoDef.Provider>
-        ))}
+        {/* One narrowed store per todo. `visible` is a filtered subset: each todo's
+            setter finds it by key in the full array that `setTodos` writes to. */}
+        <NarrowList items={visible} setStore={setTodos} getKey={(t) => t.id}>
+          {(todo, setTodo) => <TodoItem todo={todo} setTodo={setTodo} onDestroy={destroy} />}
+        </NarrowList>
       </ul>
     </section>
   )

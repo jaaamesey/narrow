@@ -53,7 +53,7 @@ const [todo] = useNarrowedStore(store, (s) => s.todos[i]!)
 const [text, setText] = useNarrowedStore(todo, (t) => t.meta, setTodo)
 
 // Lists: each item is narrowed by key and memoized, so editing one re-renders only that one.
-<NarrowList store={todos} setStore={setTodos} getKey={(t) => t.id}>
+<NarrowList items={todos} setStore={setTodos} getKey={(t) => t.id}>
   {(todo, setTodo) => <TodoRow todo={todo} setTodo={setTodo} />}
 </NarrowList>
 

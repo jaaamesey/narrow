@@ -82,21 +82,25 @@ export function Narrow(props: any) {
  * or `memo` needed. This relies on `children` being stable, which the React
  * Compiler handles; without it, wrap `children` in `useCallback`.
  *
- * `getKey` doubles as the React key and is read once per item, like a key:
- * it should only read the item, e.g. `(t) => t.id`.
+ * `items` are the items to render: the array `setStore` writes to, or any
+ * subset of it (e.g. filtered), since each item's setter finds it by key.
  *
- *   <NarrowList store={todos} setStore={setTodos} getKey={(t) => t.id}>
+ * `getKey` doubles as the React key and is read once per item, like a key: it
+ * should only read the item, e.g. `(t) => t.id`. For an inherently index-based
+ * list, use `(_, i) => i`: each setter then targets whatever is at that index.
+ *
+ *   <NarrowList items={todos} setStore={setTodos} getKey={(t) => t.id}>
  *     {(todo, setTodo) => <TodoItem todo={todo} setTodo={setTodo} />}
  *   </NarrowList>
  */
 export function NarrowList<T extends Container, K extends Key>(props: {
-  store: T[]
+  items: T[]
   setStore: SetStore<T[]>
-  getKey: (item: T) => K
+  getKey: (item: T, index: number) => K
   children: (item: T, setItem: SetStore<T>) => ReactNode
 }) {
-  return props.store.map((item) => {
-    const key = props.getKey(item)
+  return props.items.map((item, index) => {
+    const key = props.getKey(item, index)
     return (
       <NarrowListItem
         key={key}
@@ -114,7 +118,7 @@ type NarrowListItemProps = {
   itemKey: Key
   item: any
   setStore: SetStore<any[]>
-  getKey: (item: any) => Key
+  getKey: (item: any, index: number) => Key
   render: (item: any, setItem: SetStore<any>) => ReactNode
 }
 
@@ -122,7 +126,7 @@ const NarrowListItem = memo(
   function NarrowListItem({ itemKey, item, setStore, getKey, render }: NarrowListItemProps) {
     // Cached on the key, not on `getKey`, so an inline `getKey` doesn't rebuild it.
     const setItem = useMemo(
-      () => narrowSetter(setStore, (items: any[]) => items.find((x) => getKey(x) === itemKey)),
+      () => narrowSetter(setStore, (items: any[]) => items.find((x, i) => getKey(x, i) === itemKey)),
       [setStore, itemKey],
     )
     return render(item, setItem)

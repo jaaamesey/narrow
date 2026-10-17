@@ -1,24 +1,11 @@
 import { useSyncExternalStore } from 'react'
-import { createContextStore, createNarrowedStoreContext } from 'narrow'
+import { createContextStore } from 'narrow'
 
 export type Todo = { id: string; title: string; completed: boolean }
 export type State = { todos: Todo[] }
 
 /** The whole app's state. */
 export const todosDef = createContextStore<State>()
-
-/**
- * One todo, narrowed out of the app state by id.
- *
- * Encapsulation: components under `<todoDef.Provider>` only ever see a `Todo`
- * and a setter for that one todo. They don't know the app's state shape and
- * can't touch any other todo.
- *
- * Performance: thanks to structural sharing, editing one todo leaves every other
- * todo object untouched, so the narrowed context's value only changes for the
- * todo that was edited. Only that todo's components re-render.
- */
-export const todoDef = createNarrowedStoreContext(todosDef, (s, id: string) => s.todos.find((t) => t.id === id)!)
 
 const STORAGE_KEY = 'todos-narrow'
 

@@ -310,7 +310,7 @@ describe('narrowing', () => {
       const [store, set] = useNewStore(init())
       setRoot = set
       const [todos, setTodos] = useNarrowedStore(store, (s) => s.todos, set)
-      return <NarrowList store={todos} setStore={setTodos} getKey={(t) => t.id}>{renderItem}</NarrowList>
+      return <NarrowList items={todos} setStore={setTodos} getKey={(t) => t.id}>{renderItem}</NarrowList>
     }
     render(<App />)
     act(() => setRoot((s) => void s.todos.reverse()))
@@ -334,7 +334,7 @@ describe('narrowing', () => {
       setRoot = set
       const [todos, setTodos] = useNarrowedStore(store, pickTodos, set)
       // Inline getKey: fine, it's read once per item.
-      return <NarrowList store={todos} setStore={setTodos} getKey={(t) => t.id}>{renderItem}</NarrowList>
+      return <NarrowList items={todos} setStore={setTodos} getKey={(t) => t.id}>{renderItem}</NarrowList>
     }
     render(<App />)
     const before = { ...renders }
@@ -345,6 +345,26 @@ describe('narrowing', () => {
     expect(renders.item0).toBe(before.item0)
     expect(renders.item2).toBe(before.item2)
     expect(seen.size).toBe(3) // one setter per item, never rebuilt
+  })
+
+  it('<NarrowList>: index keys target whatever is at that index', () => {
+    let setRoot!: SetStore<S>
+    const setters: SetStore<Todo>[] = []
+    const renderItem = (todo: Todo, setTodo: SetStore<Todo>) => {
+      setters[todo.id] = setTodo
+      return <li data-testid={`li${todo.id}`}>{todo.text}</li>
+    }
+    function App() {
+      const [store, set] = useNewStore(init())
+      setRoot = set
+      const [todos, setTodos] = useNarrowedStore(store, (s) => s.todos, set)
+      return <NarrowList items={todos} setStore={setTodos} getKey={(_, i) => i}>{renderItem}</NarrowList>
+    }
+    render(<App />)
+    const setAtIndex0 = setters[0]!
+    act(() => setRoot((s) => void s.todos.shift())) // index 0 is now todo 1
+    act(() => setAtIndex0((t) => void (t.text = 'index 0')))
+    expect(screen.getByTestId('li1').textContent).toBe('index 0')
   })
 
   it('<NarrowList>: a stale setter for a removed item is a no-op', () => {
@@ -358,7 +378,7 @@ describe('narrowing', () => {
       const [store, set] = useNewStore(init())
       setRoot = set
       const [todos, setTodos] = useNarrowedStore(store, (s) => s.todos, set)
-      return <NarrowList store={todos} setStore={setTodos} getKey={(t) => t.id}>{renderItem}</NarrowList>
+      return <NarrowList items={todos} setStore={setTodos} getKey={(t) => t.id}>{renderItem}</NarrowList>
     }
     render(<App />)
     act(() => setRoot((s) => void s.todos.pop()))
