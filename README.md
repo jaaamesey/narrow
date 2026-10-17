@@ -42,9 +42,6 @@ A narrowed store is derived from the parent's value, and writes go through the p
 ```tsx
 const [todo, setTodo] = useNarrowedStore(store, (s) => s.todos[i]!, setStore)
 
-// Leave out the setter and it's read-only (enforced by types): the result is just `[todo]`.
-const [todo] = useNarrowedStore(store, (s) => s.todos[i]!)
-
 // Narrowed values/setters narrow further the same way.
 const [text, setText] = useNarrowedStore(todo, (t) => t.meta, setTodo)
 

@@ -23,8 +23,7 @@ export function useNewStore<T extends Container>(initial: T | (() => T)): [T, Se
  * `(s) => s.todos[i]`, or `{ get, swap }` when the function can't be traced
  * (identity comparisons, Map entries, computed views).
  *
- * Pass the parent's setter to get a narrowed setter. Leave it out and the
- * result is read-only: `[value]`.
+ * Returns the narrowed value and a setter that writes into the parent store.
  *
  * The setter is rebuilt when `setStore` or `narrow` changes, so it is always
  * correct, and stable whenever `narrow` is (hoisted, `useCallback`, or an inline
@@ -34,25 +33,15 @@ export function useNewStore<T extends Container>(initial: T | (() => T)): [T, Se
 export function useNarrowedStore<T extends Container, N extends Container>(
   store: T,
   narrow: Narrower<T, N>,
-): [N]
-export function useNarrowedStore<T extends Container, N extends Container>(
-  store: T,
-  narrow: Narrower<T, N>,
   setStore: SetStore<T>,
   deps?: DependencyList,
-): [N, SetStore<N>]
-export function useNarrowedStore<T extends Container, N extends Container>(
-  store: T,
-  narrow: Narrower<T, N>,
-  setStore?: SetStore<T>,
-  deps?: DependencyList,
-): [N] | [N, SetStore<N>] {
-  const set = useMemo(() => setStore && narrowSetter(setStore, narrow), deps ? [setStore, ...deps] : [setStore, narrow])
+): [N, SetStore<N>] {
+  const set = useMemo(() => narrowSetter(setStore, narrow), deps ? [setStore, ...deps] : [setStore, narrow])
   const value = getterOf(narrow)(store)
   // With top-down rendering a removed node's component unmounts in the same pass,
   // so reaching this means something still renders a node that no longer exists.
   if (value == null) throw new Error('narrow: the narrowed node is missing (narrow returned null/undefined)')
-  return set ? [value, set] : [value]
+  return [value, set]
 }
 
 /**

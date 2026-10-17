@@ -157,18 +157,6 @@ describe('narrowing', () => {
     expect(screen.getByTestId('t').textContent).toBe('zzz:true:parent-done')
   })
 
-  it('without a setter the result is read-only, enforced by types', () => {
-    function App() {
-      const [store] = useNewStore(init())
-      const narrowed = useNarrowedStore(store, (s) => s.todos[0]!)
-      // @ts-expect-error no setter was given, so there is no second element
-      const [, setTodo] = narrowed
-      return <div data-testid="ro">{narrowed[0].text}{String(setTodo)}</div>
-    }
-    render(<App />)
-    expect(screen.getByTestId('ro').textContent).toBe('aundefined')
-  })
-
   it('deps re-target the setter; an unchanged deps list keeps it stable', () => {
     const setters: unknown[] = []
     function App({ i }: { i: number }) {
@@ -218,8 +206,8 @@ describe('narrowing', () => {
 
   it('reading a missing node throws', () => {
     function App() {
-      const [store] = useNewStore(init())
-      useNarrowedStore(store, (s) => s.todos[99]!)
+      const [store, set] = useNewStore(init())
+      useNarrowedStore(store, (s) => s.todos[99]!, set)
       return null
     }
     const err = console.error
