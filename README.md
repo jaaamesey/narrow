@@ -17,7 +17,7 @@ setState((s) => { s.projects[pi].tasks[ti].done = true })
 
 - **It's just React state.** Immutable values flow through props and context, with no global store, selectors, actions or proxies. It works with the [React Compiler](https://react.dev/learn/react-compiler) out of the box.
 - **Context included.** Share a store through a Provider. Components that only write never re-render.
-- **Narrow when it helps.** Hand a component just its slice of the state and a setter for it ([below](#narrow-it)).
+- **Narrow when it helps.** Hand a component just its slice of the state, with a setter for it ([below](#narrow-it)).
 
 Built on [Mutative](https://github.com/unadlib/mutative) and fully typed.
 
@@ -94,7 +94,7 @@ const todoStore = createNarrowedStoreContext(appStore, (s, id: string) => s.todo
 
 ## How it compares
 
-Most state managers have components reach into a global store with selectors and actions (Zustand, Redux), or split state into atoms or proxies (Jotai, MobX, Valtio). `narrow` keeps one store of plain, immutable data that flows through props and context like `useState`, so React and the React Compiler work as usual. For encapsulation and concise code, narrowed writes give a component a setter for just its slice, so it never sees the rest of the state and updates are one-line mutations like `t.done = true`. For performance, narrowed reads (`NarrowList`, narrowed contexts) re-render only the components whose slice changed.
+Most state managers have components reach into a global store with selectors and actions (Zustand, Redux), or split state into atoms or proxies (Jotai, MobX, Valtio). `narrow` state is plain, immutable data that flows through props and context like `useState`, so React and the React Compiler work as usual. For encapsulation and concise code, narrowed writes give a component a setter for just its slice, so it never sees the rest of the state and updates are one-line mutations like `t.done = true`. For performance, narrowed reads (`NarrowList`, narrowed contexts) re-render only the components whose slice changed.
 
 ## Example
 
