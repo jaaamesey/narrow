@@ -73,27 +73,9 @@ const todoStore = createNarrowedStoreContext(appStore, (s, id: string) => s.todo
 - **Mutative's rules apply:** plain objects, arrays, Maps and Sets can be mutated in a setter. Dates and class instances get replaced (`s.when = new Date()`).
 - **Without the React Compiler**, wrap inline narrow functions in `useCallback` to keep their setters stable, or pass dependencies: `useNarrowedStore(store, fn, setStore, [id])`.
 
-## How other libraries compare
+## How it compares
 
-Take a todo row that shows and edits one todo, in a list where other todos are also changing:
-
-| | What the row receives | How the row toggles its todo | Does the row know where its todo lives in the state? | Do edits to *other* todos re-render it? |
-|---|---|---|---|---|
-| **`narrow`** | `todo`, `setTodo` | `setTodo((t) => { t.done = !t.done })` | No | No¹ |
-| **`useState` + context** | `todo`, plus a callback for each kind of edit (`onToggle`, `onRename`, …) passed down through every layer | The owner rebuilds the path: `todos.map((t) => (t.id === id ? { ...t, done: !t.done } : t))` | No, but every owner above it does | Yes, unless you split contexts or memoize by hand |
-| **Zustand** | An id | Calls a store action, `toggle(id)` | Yes: `useStore((s) => s.todos.find((t) => t.id === id))` | No (selector) |
-| **Jotai** (`splitAtom`) | An atom for its todo | `setTodo((t) => ({ ...t, done: !t.done }))` | No | No |
-| **MobX** | The todo itself, as an observable | `todo.done = !todo.done` | No | No (tracked reads in `observer` components) |
-| **Valtio** | The todo's proxy, read through `useSnapshot` | `todo.done = !todo.done`, on the proxy | No | No (tracked reads) |
-
-¹ Untouched todos keep their identity (structural sharing), and each row's setter is stable, so `NarrowList` skips those rows.
-
-**Where they differ from `narrow`:**
-- **Zustand** stores are global, usable outside React, and have devtools and middleware. The price is that components are wired to one store's shape, so the same row can't be reused for a todo stored somewhere else.
-- **Jotai** is the closest match. Its state is a graph of atoms (good for derived and async values) rather than one plain object tree, and writes are spreads unless you add `jotai-immer`.
-- **MobX** lets you skip the setter entirely, but observables are edited in place, so their identity never changes. React's memoization, effect dependencies and the React Compiler compare identity, so they can't see those edits; you rely on `observer` instead. With `narrow`, every edit produces new immutable values.
-- **Valtio** reads from immutable snapshots and writes to a proxy, so a row holds two references, much like `narrow`'s value and setter. Its state lives in proxies created outside React (usually at module level). `narrow` state is ordinary React state, so each mounted tree gets its own.
-- **`narrow`** is new and React-only, with no devtools or middleware, and its stores live in the component tree.
+Most state managers have components reach into a global store with selectors and actions (Zustand, Redux), or split state into atoms or proxies (Jotai, MobX, Valtio). `narrow` keeps one store of plain, immutable data that flows through props and context like `useState`, so React and the React Compiler work as usual. Narrowed writes give a component a setter for just its slice: it edits that slice with simple mutations and never sees the rest of the state. Narrowed reads (`NarrowList`, narrowed contexts) re-render only the components whose slice changed.
 
 ## Example
 
