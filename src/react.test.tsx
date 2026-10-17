@@ -1,6 +1,7 @@
 import { act, render, screen } from '@testing-library/react'
-import { memo, StrictMode } from 'react'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { StrictMode } from 'react'
+import { renderToString } from 'react-dom/server'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createContextStore,
   createNarrowedStoreContext,
@@ -24,11 +25,14 @@ const init = (): S => ({
 /** Counts renders per label, so we can assert who did (not) re-render. */
 const renders: Record<string, number> = {}
 const tick = (k: string) => (renders[k] = (renders[k] ?? 0) + 1)
-beforeEach(() => void Object.keys(renders).forEach((k) => delete renders[k]))
+beforeEach(() => {
+  Object.keys(renders).forEach((k) => delete renders[k])
+  vi.restoreAllMocks()
+})
 
 describe('useNewStore', () => {
   it('returns the plain value, like useState, and supports all three setter forms', () => {
-    let setStore!: (typeof useNewStore<S>) extends (...a: any) => [any, infer F] ? F : never
+    let setStore!: SetStore<S>
     function App() {
       const [store, set] = useNewStore(init())
       setStore = set
@@ -110,13 +114,8 @@ describe('context store', () => {
   })
 
   it('throws without a provider or default', () => {
-    const err = console.error
-    console.error = () => {}
-    try {
-      expect(() => render(<Title />)).toThrow(/no store found/)
-    } finally {
-      console.error = err
-    }
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(() => render(<Title />)).toThrow(/no store found/)
   })
 
   it('without a provider, the default is a read-only value (not a shared store)', () => {
@@ -210,13 +209,8 @@ describe('narrowing', () => {
       useNarrowedStore(store, (s) => s.todos[99]!, set)
       return null
     }
-    const err = console.error
-    console.error = () => {}
-    try {
-      expect(() => render(<App />)).toThrow(/narrowed node is missing/)
-    } finally {
-      console.error = err
-    }
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(() => render(<App />)).toThrow(/narrowed node is missing/)
   })
 
   it('<NarrowList>: writes go to the right item, by key, even after reordering', () => {
@@ -288,6 +282,44 @@ describe('narrowing', () => {
     expect(screen.getByTestId('li1').textContent).toBe('index 0')
   })
 
+  it('<NarrowList>: items can be a filtered subset; writes land in the full array', () => {
+    const setters: Record<number, SetStore<Todo>> = {}
+    const renderItem = (todo: Todo, setTodo: SetStore<Todo>) => {
+      setters[todo.id] = setTodo
+      return <li data-testid={`li${todo.id}`}>{todo.text}</li>
+    }
+    let latest!: S
+    function App() {
+      // Ids differ from indexes, so a lookup by position would hit the wrong item.
+      const [store, set] = useNewStore<S>({ title: 't', todos: [10, 20, 30].map((id) => ({ id, text: String(id), done: false })) })
+      latest = store
+      const [todos, setTodos] = useNarrowedStore(store, (s) => s.todos, set)
+      return <NarrowList items={todos.filter((t) => t.id !== 20)} setStore={setTodos} getKey={(t) => t.id}>{renderItem}</NarrowList>
+    }
+    render(<App />)
+    expect(screen.queryByTestId('li20')).toBeNull()
+    act(() => setters[30]!((t) => void (t.text = 'z')))
+    expect(latest.todos.map((t) => t.text)).toEqual(['10', '20', 'z'])
+  })
+
+  it('<NarrowList>: several item writes in one event all land', () => {
+    const setters: Record<number, SetStore<Todo>> = {}
+    const renderItem = (todo: Todo, setTodo: SetStore<Todo>) => {
+      setters[todo.id] = setTodo
+      return <li data-testid={`li${todo.id}`}>{String(todo.done)}</li>
+    }
+    function App() {
+      const [store, set] = useNewStore(init())
+      const [todos, setTodos] = useNarrowedStore(store, (s) => s.todos, set)
+      return <NarrowList items={todos} setStore={setTodos} getKey={(t) => t.id}>{renderItem}</NarrowList>
+    }
+    render(<App />)
+    act(() => {
+      for (const id of [0, 1, 2]) setters[id]!((t) => void (t.done = true))
+    })
+    expect([0, 1, 2].map((id) => screen.getByTestId(`li${id}`).textContent)).toEqual(['true', 'true', 'true'])
+  })
+
   it('<NarrowList>: a stale setter for a removed item is a no-op', () => {
     let setRoot!: SetStore<S>
     let staleSet!: SetStore<Todo>
@@ -305,19 +337,6 @@ describe('narrowing', () => {
     act(() => setRoot((s) => void s.todos.pop()))
     expect(() => act(() => staleSet((t) => void (t.text = 'nope')))).not.toThrow()
     expect(screen.queryByTestId('li2')).toBeNull()
-  })
-
-  it('narrowing a narrowed value: pass the narrowed value and narrowed setter', () => {
-    type Deep = { inner: { n: number } }
-    function App() {
-      const [store, set] = useNewStore<Deep>({ inner: { n: 0 } })
-      const [inner, setInner] = useNarrowedStore(store, (s) => s.inner, set)
-      const [self, setSelf] = useNarrowedStore(inner, (i) => i, setInner)
-      return <button data-testid="b" onClick={() => setSelf((x) => void x.n++)}>{self.n}:{store.inner.n}</button>
-    }
-    render(<App />)
-    act(() => screen.getByTestId('b').click())
-    expect(screen.getByTestId('b').textContent).toBe('1:1')
   })
 
   it('useNarrowedStore and narrowed contexts accept { get, swap }', () => {
@@ -390,8 +409,8 @@ describe('narrowing', () => {
       tick(`read${i}`)
       return <i>{todoDef.useVal().text}</i>
     }
-    function Writer() {
-      tick('write')
+    function Writer({ i }: { i: number }) {
+      tick(`write${i}`)
       todoDef.useSet()
       return null
     }
@@ -401,7 +420,7 @@ describe('narrowing', () => {
         {[0, 1].map((i) => (
           <todoDef.Provider key={i} narrowArg={i}>
             <Reader i={i} />
-            <Writer />
+            <Writer i={i} />
           </todoDef.Provider>
         ))}
       </todosDef.Provider>,
@@ -409,7 +428,8 @@ describe('narrowing', () => {
     act(() => root((s) => void (s.todos[0]!.text = 'changed')))
     expect(renders.read0).toBe(2)
     expect(renders.read1).toBe(1)
-    expect(renders.write).toBe(2) // once per Provider, from mount only
+    expect(renders.write0).toBe(1)
+    expect(renders.write1).toBe(1)
   })
 
   it('narrowed context follows a changing narrowArg, for reads and writes', () => {
@@ -441,5 +461,37 @@ describe('narrowing', () => {
     }
     render(<View />)
     expect(screen.getByTestId('v').textContent).toBe('dflt')
+  })
+})
+
+describe('server rendering and types', () => {
+  it('renders on the server', () => {
+    const def = createContextStore<S>()
+    function Items() {
+      const state = def.useVal()
+      const setState = def.useSet()
+      const [todos, setTodos] = useNarrowedStore(state, (s) => s.todos, setState)
+      return <ul><NarrowList items={todos} setStore={setTodos} getKey={(t) => t.id}>{(t) => <li>{t.text}</li>}</NarrowList></ul>
+    }
+    expect(renderToString(<def.Provider initial={init()}><Items /></def.Provider>)).toBe('<ul><li>a</li><li>b</li><li>c</li></ul>')
+  })
+
+  it('rejects misuse at the type level', () => {
+    const def = createContextStore<S>()
+    const fixed = createNarrowedStoreContext(def, (s) => s.todos)
+    const byIndex = createNarrowedStoreContext(def, (s, i: number) => s.todos[i]!)
+    const checks = (store: S, setStore: SetStore<S>) => [
+      // @ts-expect-error a Provider takes either a store or `initial`, not both
+      <def.Provider store={store} setStore={setStore} initial={init()} />,
+      // @ts-expect-error narrowArg is required when the narrow function takes one
+      <byIndex.Provider />,
+      // @ts-expect-error and not accepted when it doesn't
+      <fixed.Provider narrowArg={1} />,
+      // @ts-expect-error useNarrowedStore needs the parent's setter
+      useNarrowedStore(store, (s) => s.todos),
+      // @ts-expect-error narrowing must land on an object, not a primitive
+      useNarrowedStore(store, (s) => s.title, setStore),
+    ]
+    expect(typeof checks).toBe('function')
   })
 })

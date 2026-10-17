@@ -43,9 +43,8 @@ describe('createStore setters', () => {
     expect(store.get().count).toBe(10)
   })
 
-  it('infers mutate for functions and swap for values', () => {
+  it('ignores a value returned from a mutate recipe at runtime (the types forbid it)', () => {
     const store = createStore({ n: 0 })
-    // Even if a (type-invalid) recipe returns a value, mutate mode ignores it.
     store.set(((s: { n: number }) => { s.n = 1; return { n: 99 } }) as any)
     expect(store.get().n).toBe(1)
   })
@@ -136,14 +135,29 @@ describe('narrowStore', () => {
     expect(l).not.toHaveBeenCalled()
   })
 
-  it('narrows a narrowed store', () => {
+  it('narrows a narrowed store, writing through every level', () => {
+    const store = createStore({ a: { b: { c: { n: 0 } }, sibling: {} }, other: {} })
+    const before = store.get()
+    const b = narrowStore(store, (s) => s.a.b)
+    const c = narrowStore(b, (x) => x.c)
+    c.set((x) => void x.n++)
+    c.set((x) => ({ n: x.n * 10 }), 'swap')
+    expect(store.get().a.b.c.n).toBe(10)
+    expect(store.get().a.sibling).toBe(before.a.sibling)
+    expect(store.get().other).toBe(before.other)
+  })
+
+  it('consecutive writes through different narrowed setters all land', () => {
     const store = createStore(init())
-    const meta = narrowStore(store, (s) => s.meta)
-    const tags = narrowStore(meta, (m) => m.tags)
-    tags.set((t) => void t.push('x'))
-    tags.set((t) => [...t, 'y'], 'swap')
-    expect(store.get().meta.tags).toEqual(['x', 'y'])
-    expect(meta.get().tags).toBe(tags.get())
+    const first = narrowStore(store, (s) => s.todos[0]!)
+    const second = narrowStore(store, (s) => s.todos[1]!)
+    first.set((t) => void (t.done = true))
+    second.set((t) => void (t.text = 'x'))
+    first.set((t) => void (t.text = 'y'))
+    expect(store.get().todos).toEqual([
+      { id: 1, text: 'y', done: true },
+      { id: 2, text: 'x', done: false },
+    ])
   })
 
   it('ignores writes once the target is gone', () => {
