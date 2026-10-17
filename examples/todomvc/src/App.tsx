@@ -38,19 +38,18 @@ function Header() {
   return (
     <header className="header">
       <h1>todos</h1>
-      <input
-        className="new-todo"
-        placeholder="What needs to be done?"
-        autoFocus
-        onKeyDown={(e) => {
-          const title = e.currentTarget.value.trim()
-          if (e.key !== 'Enter' || !title) return
+      {/* A form action: React resets the form after it runs. */}
+      <form
+        action={(data) => {
+          const title = String(data.get('title')).trim()
+          if (!title) return
           setTodos((s) => {
             s.todos.push({ id: crypto.randomUUID(), title, completed: false })
           })
-          e.currentTarget.value = ''
         }}
-      />
+      >
+        <input name="title" className="new-todo" placeholder="What needs to be done?" autoFocus />
+      </form>
     </header>
   )
 }
