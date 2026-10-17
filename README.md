@@ -2,6 +2,8 @@
 
 `useState` for nested data. Mutate it like a plain object, keep it as plain immutable React state, and hand any component just the slice it needs.
 
+If you've used `useImmer`, the mutation part is familiar. `narrow` adds what comes next: narrowing, so a component gets its slice and a setter that writes back into the store, and context stores that keep components that only write from re-rendering.
+
 No global store, no selectors, no actions. State is plain data that lives in your component tree and flows through props and context, so React and the React Compiler treat it like any other state. Writes go through [Mutative](https://github.com/unadlib/mutative), which turns your mutations into immutable updates.
 
 ```tsx
@@ -46,7 +48,7 @@ Returning a new object from a mutating function is a type error, so a forgotten 
 
 ## Then narrow it
 
-A todo row shouldn't need the whole app's state. Narrow the store, and the row gets its todo and a setter that writes back into the store. The row stays reusable, its updates are one line, and it doesn't re-render when other todos change.
+A todo row shouldn't need the whole app's state. Narrow the store, and the row gets its todo and a setter that writes back into the store. The row stays reusable, its updates are one line, and it doesn't re-render when other todos change (requires the React Compiler, or a `useCallback`).
 
 ```tsx
 const [todos, setTodos] = useNarrowedStore(state, (s) => s.todos, setState)
@@ -81,17 +83,17 @@ const settingsStore = createNarrowedStoreContext(appStore, (s) => s.settings)
 <settingsStore.Provider>…</settingsStore.Provider>
 ```
 
-### Why narrow over useState and context?
+### Why narrow over useState, useImmer and context?
 
-- Nested updates are one line
+- Components get their slice of the state and a setter for it, not all of it
 - Components that only write don't re-render when the state changes
-- Components get their slice of the state, not all of it
+- Nested updates are one line, as with `useImmer`
 
 ### Why narrow over Zustand, Jotai or Valtio?
 
 - It's React state: plain values in your component tree, not module-level stores, atoms or proxies
 - Components receive a slice and a setter instead of reaching into a store by path
-- Lists re-render only the item that changed, without selectors or `memo`
+- Lists re-render only the item that changed, without selectors or `memo` (requires the React Compiler, or a `useCallback`)
 
 ---
 

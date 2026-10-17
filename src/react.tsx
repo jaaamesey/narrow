@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from 'react'
 import type { Draft } from 'mutative'
-import { createStore, getterOf, narrowSetter, type Container, type Narrower, type SetStore } from './store'
+import { createStore, getterOf, narrowSetter, type Container, type Narrower, type SetStore } from './store.js'
 
 /** Like `useState`: the value re-renders the owner; the setter is stable. */
 export function useNewStore<T extends Container>(initial: T | (() => T)): [T, SetStore<T>] {
