@@ -2,8 +2,6 @@
 
 `useState` for nested data. Mutate it like a plain object, keep it as plain immutable React state, and hand any component just the slice it needs.
 
-If you've used `useImmer`, the mutation part is familiar. `narrow` adds what comes next: narrowing, so a component gets its slice and a setter that writes back into the store, and context stores that keep components that only write from re-rendering.
-
 No global store, no selectors, no actions. State is plain data that lives in your component tree and flows through props and context, so React and the React Compiler treat it like any other state. Writes go through [Mutative](https://github.com/unadlib/mutative), which turns your mutations into immutable updates.
 
 > **Warning:** `narrow` is still a 0.x release, so the API may change. Found a bug, or a case it doesn't handle? Please [open an issue](https://github.com/jaaamesey/narrow/issues).
@@ -64,7 +62,7 @@ function TodoRow({ todo, setTodo }: { todo: Todo; setTodo: SetStore<Todo> }) {
 }
 ```
 
-`NarrowList` gives each item its own narrowed store and re-renders only the items that changed. A narrowed store works like any other, so you can narrow it again.
+`NarrowList` gives each item its own narrowed store. A narrowed store works like any other, so you can narrow it again.
 
 ## Share it through context
 
@@ -101,13 +99,10 @@ const settingsStore = createNarrowedStoreContext(appStore, (s) => s.settings)
 
 - It's React state: plain values in your component tree, not module-level stores, atoms or proxies
 - Components receive a slice and a setter instead of reaching into a store by path
-- Lists re-render only the item that changed, without selectors or `memo` (requires the React Compiler, or a `useCallback`)
 
----
+## Details
 
-# Recipes
-
-## Narrowing to an item picked at runtime
+### Narrowing to an item picked at runtime
 
 Give the narrow function a second parameter, and pass it to the Provider:
 
@@ -117,7 +112,7 @@ const todoStore = createNarrowedStoreContext(appStore, (s, id: string) => s.todo
 <todoStore.Provider narrowArg={selectedId}>…</todoStore.Provider>
 ```
 
-## When a narrow function can't be traced
+### When a narrow function can't be traced
 
 Writes work out where the narrowed data lives by tracing the narrow function. Identity checks (`t === ref`), Map lookups and computed values can't be traced, so the write throws. Pass `get` and `swap` instead:
 
@@ -125,7 +120,7 @@ Writes work out where the narrowed data lives by tracing the narrow function. Id
 useNarrowedStore(state, { get: (s) => s.byId.get(id)!, swap: (d, todo) => { d.byId.set(id, todo) } }, setState)
 ```
 
-## Without the React Compiler
+### Without the React Compiler
 
 Wrap inline narrow functions and `NarrowList` children in `useCallback`, or pass dependencies to the hook:
 
@@ -133,7 +128,7 @@ Wrap inline narrow functions and `NarrowList` children in `useCallback`, or pass
 useNarrowedStore(state, (s) => s.todos[i], setState, [i])
 ```
 
-## Things to know
+### Edge cases
 
 - Reading narrowed data that no longer exists throws. Writing to it does nothing, so late async callbacks are safe.
 - Following Mutative, plain objects, arrays, Maps and Sets can be mutated. Dates and class instances are replaced, not mutated.
