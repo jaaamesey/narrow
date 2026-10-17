@@ -7,6 +7,7 @@ type MutateResult<R> = [R] extends [void | Primitive]
   ? R
   : 'recipe returned an object: it mutates by default. Pass "swap" as the second argument to replace the state'
 
+/** Mutates a draft when given a function, replaces the state when given a value or a function with `'swap'`. */
 export interface SetStore<T extends object> {
   (next: T): void
   <R>(recipe: (draft: Draft<T>) => MutateResult<R>, mode?: 'mutate'): void
@@ -20,6 +21,7 @@ export function applyUpdate<T>(prev: T, next: unknown, mode?: 'mutate' | 'swap')
   return create(prev, (draft) => void (next as (d: Draft<T>) => unknown)(draft))
 }
 
+/** A narrow function, or `{ get, swap }` when the function can't be traced. */
 export type Narrower<T, N> =
   | ((state: T) => N | undefined)
   | { get: (state: T) => N | undefined; swap: (draft: Draft<T>, value: N) => void }

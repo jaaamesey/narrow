@@ -352,6 +352,43 @@ describe('narrowing', () => {
     expect(screen.queryByTestId('li2')).toBeNull()
   })
 
+  it('<NarrowList> over a record: each entry gets its own setter, and only changed entries re-render', () => {
+    type R = { byId: Record<string, Todo> }
+    const pick = (s: R) => s.byId
+    const renderItem = (todo: Todo, setTodo: SetStore<Todo>, key: string) => {
+      tick(`rec-${key}`)
+      return <button data-testid={`r-${key}`} onClick={() => setTodo((t) => void (t.done = true))}>{key}:{String(todo.done)}</button>
+    }
+    function App() {
+      const [store, set] = useNewStore<R>({ byId: { x: { id: 1, text: 'x', done: false }, y: { id: 2, text: 'y', done: false } } })
+      const [byId, setById] = useNarrowedStore(store, pick, set)
+      return <NarrowList items={byId} setStore={setById}>{renderItem}</NarrowList>
+    }
+    render(<App />)
+    act(() => screen.getByTestId('r-y').click())
+    expect(screen.getByTestId('r-y').textContent).toBe('y:true')
+    expect(screen.getByTestId('r-x').textContent).toBe('x:false')
+    expect(renders['rec-x']).toBe(1)
+    expect(renders['rec-y']).toBe(2)
+  })
+
+  it('<NarrowList> over a Map: writes land on the right entry', () => {
+    type M = { byId: Map<string, Todo> }
+    const pick = (s: M) => s.byId
+    const renderItem = (todo: Todo, setTodo: SetStore<Todo>, key: string) => (
+      <button data-testid={`m-${key}`} onClick={() => setTodo((t) => void (t.text += '!'))}>{todo.text}</button>
+    )
+    function App() {
+      const [store, set] = useNewStore<M>({ byId: new Map([['a', { id: 1, text: 'a', done: false }], ['b', { id: 2, text: 'b', done: false }]]) })
+      const [byId, setById] = useNarrowedStore(store, pick, set)
+      return <NarrowList items={byId} setStore={setById}>{renderItem}</NarrowList>
+    }
+    render(<App />)
+    act(() => screen.getByTestId('m-b').click())
+    expect(screen.getByTestId('m-b').textContent).toBe('b!')
+    expect(screen.getByTestId('m-a').textContent).toBe('a')
+  })
+
   it('useNarrowedStore and narrowed contexts accept { get, swap }', () => {
     type M = { byId: Map<string, Todo> }
     const mDef = createContextStore<M>()
@@ -502,6 +539,8 @@ describe('server rendering and types', () => {
       <fixed.Provider narrowArg={1} />,
       // @ts-expect-error useNarrowedStore needs the parent's setter
       useNarrowedStore(store, (s) => s.todos),
+      // @ts-expect-error getKey is only for arrays; records and Maps are keyed already
+      <NarrowList items={{ a: init().todos[0]! }} setStore={null as unknown as SetStore<Record<string, Todo>>} getKey={() => 'a'}>{() => null}</NarrowList>,
       // @ts-expect-error narrowing must land on an object, not a primitive
       useNarrowedStore(store, (s) => s.title, setStore),
     ]

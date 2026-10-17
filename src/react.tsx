@@ -10,12 +10,14 @@ import {
 import type { Draft } from 'mutative'
 import { applyUpdate, getterOf, narrowSetter, type Narrower, type SetStore } from './store.js'
 
+/** Like `useState`, but a function passed to the setter mutates a draft. */
 export function useNewStore<T extends object>(initial: T | (() => T)): [T, SetStore<T>] {
   const [state, setState] = useState(initial)
   const [set] = useState(() => ((next: unknown, mode?: 'mutate' | 'swap') => setState((prev) => applyUpdate(prev, next, mode))) as SetStore<T>)
   return [state, set]
 }
 
+/** Narrows a store to the part `narrow` picks, returning that part and a setter that writes back into the store. */
 export function useNarrowedStore<T extends object, N extends object>(
   store: T,
   narrow: Narrower<T, N>,
@@ -27,34 +29,69 @@ export function useNarrowedStore<T extends object, N extends object>(
   return [value, set]
 }
 
-type NarrowListProps<T extends object> = {
+type RenderItem<T extends object, K> = (item: T, setItem: SetStore<T>, key: K) => ReactNode
+
+/** Renders every item of an array with its own narrowed store; only changed items re-render. */
+export function NarrowList<T extends object>(props: {
   items: T[]
   setStore: SetStore<T[]>
   getKey: (item: T, index: number) => Key
-  children: (item: T, setItem: SetStore<T>) => ReactNode
+  children: RenderItem<T, Key>
+}): ReactNode
+/** Renders every entry of a record with its own narrowed store; only changed entries re-render. */
+export function NarrowList<K extends string, T extends object>(props: {
+  items: Record<K, T>
+  setStore: SetStore<Record<K, T>>
+  getKey?: never
+  children: RenderItem<T, K>
+}): ReactNode
+/** Renders every entry of a Map with its own narrowed store; only changed entries re-render. */
+export function NarrowList<K extends Key, T extends object>(props: {
+  items: Map<K, T>
+  setStore: SetStore<Map<K, T>>
+  getKey?: never
+  children: RenderItem<T, K>
+}): ReactNode
+export function NarrowList({ items, setStore, getKey, children }: {
+  items: object[] | Record<string, object> | Map<Key, object>
+  setStore: SetStore<any>
+  getKey?: (item: object, index: number) => Key
+  children: RenderItem<object, Key>
+}) {
+  const kind = Array.isArray(items) ? 'array' : items instanceof Map ? 'map' : 'record'
+  const entries: [Key, object][] = Array.isArray(items)
+    ? items.map((item, i) => [getKey!(item, i), item])
+    : items instanceof Map
+      ? [...items]
+      : Object.entries(items)
+  return entries.map(([key, item]) => (
+    <NarrowListItem key={key} itemKey={key} item={item} kind={kind} setStore={setStore} getKey={getKey} render={children} />
+  ))
 }
 
-export function NarrowList<T extends object>({ items, setStore, getKey, children }: NarrowListProps<T>) {
-  return items.map((item, index) => {
-    const key = getKey(item, index)
-    return <NarrowListItem key={key} itemKey={key} item={item} setStore={setStore} getKey={getKey} render={children} />
-  })
-}
+type ItemKind = 'array' | 'record' | 'map'
 
-type NarrowListItemProps<T extends object> = Omit<NarrowListProps<T>, 'items' | 'children'> & {
+const narrowToItem = (kind: ItemKind, key: Key, getKey?: (item: object, index: number) => Key): Narrower<any, object> =>
+  kind === 'array'
+    ? (items: object[]) => items.find((x, i) => getKey!(x, i) === key)
+    : kind === 'map'
+      ? { get: (m: Map<Key, object>) => m.get(key), swap: (d, v) => void d.set(key, v) }
+      : (r: Record<string, object>) => r[String(key)]
+
+const NarrowListItem = memo(function NarrowListItem(props: {
   itemKey: Key
-  item: T
-  render: NarrowListProps<T>['children']
-}
+  item: object
+  kind: ItemKind
+  setStore: SetStore<any>
+  getKey?: (item: object, index: number) => Key
+  render: RenderItem<object, Key>
+}) {
+  const { itemKey, item, kind, setStore, getKey, render } = props
+  const setItem = useMemo(() => narrowSetter(setStore, narrowToItem(kind, itemKey, getKey)), [setStore, kind, getKey, itemKey])
+  return render(item, setItem, itemKey)
+})
 
-const NarrowListItem = memo(function NarrowListItem<T extends object>({ itemKey, item, setStore, getKey, render }: NarrowListItemProps<T>) {
-  const setItem = useMemo(
-    () => narrowSetter<T[], T>(setStore, (items) => items.find((x, i) => getKey(x, i) === itemKey)),
-    [setStore, getKey, itemKey],
-  )
-  return render(item, setItem)
-}) as <T extends object>(props: NarrowListItemProps<T> & { key: Key }) => ReactNode
-
+/** A store shared through context: `useVal()` re-renders on changes, `useSet()` never does. */
 export interface ContextStore<T extends object> {
   useVal(): T
   useSet(): SetStore<T>
@@ -102,6 +139,7 @@ function makeContext<T extends object>(fallback?: T) {
   return { def, Provide }
 }
 
+/** Creates a context store. `fallback` is a read-only value used when no Provider is above. */
 export function createContextStore<T extends object>(fallback?: T): StoreContext<T> {
   const { def, Provide } = makeContext<T>(fallback)
   function Owned(p: { initial: T | (() => T); children?: ReactNode }) {
@@ -115,6 +153,7 @@ export function createContextStore<T extends object>(fallback?: T): StoreContext
   return { ...def, Provider }
 }
 
+/** Creates a context store narrowed from `parent`, whose consumers only re-render when their part changes. */
 export function createNarrowedStoreContext<T extends object, N extends object, A = void>(
   parent: ContextStore<T>,
   narrow: ((state: T, arg: A) => N | undefined) | { get: (state: T, arg: A) => N | undefined; swap: (draft: Draft<T>, value: N, arg: A) => void },
