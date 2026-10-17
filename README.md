@@ -68,6 +68,10 @@ const todoDef = createNarrowedStoreContext(storeDef, (s, i: number) => s.todos[i
   With `{ get, swap }` the narrowed value doesn't even have to exist in the state: `swap` can write a computed view back (e.g. split a full name into first/last).
 - Reading a node that doesn't exist throws. Writing to one is a silent no-op, since stale async handlers are normal (React dropped its equivalent warning for the same reason).
 
+## Example
+
+[`examples/todomvc`](examples/todomvc) is the standard TodoMVC app, showing narrowing per todo.
+
 ## Scripts
 
 `npm test`, `npm run typecheck`
