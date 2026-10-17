@@ -30,8 +30,30 @@ export interface Store<T extends Container> {
   subscribe(listener: () => void): () => void
 }
 
+/**
+ * Every state value a store has held (or a narrowed store has served) maps
+ * back to its store. This is what lets plain *values* be passed to
+ * `useNarrowedStore` / `<Narrow>` while writes still reach the right store.
+ */
+const owners = new WeakMap<object, Store<any>>()
+
+/** The store a state value belongs to (any version of it). */
+export function storeOf<T extends Container>(value: T): Store<T> {
+  const store = owners.get(value)
+  if (!store) throw new Error('narrow: not a store value. Pass a value that came from a narrow hook/context (not a copy or unrelated object).')
+  return store
+}
+
+/** Copy the root so two stores created from the same initial object don't collide in `owners`. */
+function shallowClone<T extends Container>(v: T): T {
+  if (Array.isArray(v)) return [...v] as T
+  if (v instanceof Map) return new Map(v) as T
+  if (v instanceof Set) return new Set(v) as T
+  return Object.assign(Object.create(Object.getPrototypeOf(v)), v)
+}
+
 export function createStore<T extends Container>(initial: T): Store<T> {
-  let state = initial
+  let state = shallowClone(initial)
   const listeners = new Set<() => void>()
 
   const set = (next: unknown, mode?: 'mutate' | 'swap') => {
@@ -43,10 +65,13 @@ export function createStore<T extends Container>(initial: T): Store<T> {
       // Return values are ignored in mutate mode (the types forbid them).
       state = create(prev, (draft) => void (next as (d: Draft<T>) => unknown)(draft))
     }
-    if (!Object.is(prev, state)) [...listeners].forEach((l) => l())
+    if (!Object.is(prev, state)) {
+      owners.set(state, store)
+      ;[...listeners].forEach((l) => l())
+    }
   }
 
-  return {
+  const store: Store<T> = {
     get: () => state,
     set: set as SetStore<T>,
     subscribe(listener) {
@@ -54,6 +79,8 @@ export function createStore<T extends Container>(initial: T): Store<T> {
       return () => void listeners.delete(listener)
     },
   }
+  owners.set(state, store)
+  return store
 }
 
 /**
@@ -69,7 +96,11 @@ export function narrowStore<T extends Container, N extends Container>(
   // still points at it hasn't unmounted yet, keep serving the last value
   // rather than crashing mid-render. Writes to a missing target are no-ops.
   let last = narrowFn(source.get())
-  const get = () => (last = narrowFn(source.get()) ?? last)
+  const get = () => {
+    last = narrowFn(source.get()) ?? last
+    owners.set(last, narrowed)
+    return last
+  }
 
   const set = (next: unknown, mode?: 'mutate' | 'swap') => {
     mode ??= typeof next === 'function' ? 'mutate' : 'swap'
@@ -85,7 +116,8 @@ export function narrowStore<T extends Container, N extends Container>(
     })
   }
 
-  return { get, set: set as SetStore<N>, subscribe: source.subscribe }
+  const narrowed: Store<N> = { get, set: set as SetStore<N>, subscribe: source.subscribe }
+  return narrowed
 }
 
 /** Make `target` (a draft) structurally equal to `next` without replacing the node. */

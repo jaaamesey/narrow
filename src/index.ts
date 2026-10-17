@@ -1,8 +1,8 @@
-export { createStore, narrowStore } from './store'
+export { createStore, narrowStore, storeOf } from './store'
 export type { Store, SetStore, Container } from './store'
 export {
   useNewStore,
-  useStoreValue,
+  useSelector,
   useNarrowedStore,
   Narrow,
   createContextStore,
