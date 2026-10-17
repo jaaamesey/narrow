@@ -84,8 +84,8 @@ export interface StoreContext<T extends Container> extends ContextStore<T> {
   /** Provide a store from `useNewStore`, or have the provider own a new one via `initial`. */
   Provider(
     props:
-      | { store: T; setStore: SetStore<T>; children?: ReactNode }
-      | { initial: T | (() => T); children?: ReactNode },
+      | { store: T; setStore: SetStore<T>; initial?: never; children?: ReactNode }
+      | { initial: T | (() => T); store?: never; setStore?: never; children?: ReactNode },
   ): ReactNode
 }
 
@@ -136,13 +136,14 @@ export function createContextStore<T extends Container>(fallback?: T): StoreCont
   }
   function Provider(
     props:
-      | { store: T; setStore: SetStore<T>; children?: ReactNode }
-      | { initial: T | (() => T); children?: ReactNode },
+      | { store: T; setStore: SetStore<T>; initial?: never; children?: ReactNode }
+      | { initial: T | (() => T); store?: never; setStore?: never; children?: ReactNode },
   ) {
-    return 'store' in props ? (
-      <Provide value={props.store} set={props.setStore}>{props.children}</Provide>
+    // The props types make these mutually exclusive (`never` on the other branch).
+    return props.setStore ? (
+      <Provide value={props.store as T} set={props.setStore}>{props.children}</Provide>
     ) : (
-      <Owned initial={props.initial}>{props.children}</Owned>
+      <Owned initial={props.initial!}>{props.children}</Owned>
     )
   }
   return { ...def, Provider }
