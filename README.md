@@ -52,6 +52,11 @@ const [todo] = useNarrowedStore(store, (s) => s.todos[i]!)
 // Narrowed values/setters narrow further the same way.
 const [text, setText] = useNarrowedStore(todo, (t) => t.meta, setTodo)
 
+// Lists: each item is narrowed by key and memoized, so editing one re-renders only that one.
+<NarrowList store={todos} setStore={setTodos} getKey={(t) => t.id}>
+  {(todo, setTodo) => <TodoRow todo={todo} setTodo={setTodo} />}
+</NarrowList>
+
 const todoDef = createNarrowedStoreContext(storeDef, (s, i: number) => s.todos[i]!)
 <todoDef.Provider narrowArg={i}><TodoRow /></todoDef.Provider>   // todoDef.useVal() / useSet() inside
 // narrowArg is compared with Object.is (like a dependency), so prefer an id or index over an object literal

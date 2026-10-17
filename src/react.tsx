@@ -1,6 +1,8 @@
 import {
   createContext,
+  memo,
   type DependencyList,
+  type Key,
   useContext,
   useMemo,
   useState,
@@ -72,6 +74,63 @@ export function Narrow(props: any) {
   const [value, set] = (useNarrowedStore as any)(props.store, props.by, props.setStore, props.deps)
   return <>{props.children(value, set)}</>
 }
+
+/**
+ * Narrow every item of an array store and render `children` once per item.
+ * Each item is its own memoized component with a stable setter (cached on the
+ * item's key), so changing one item re-renders only that item, with no `deps`
+ * or `memo` needed. This relies on `children` being stable, which the React
+ * Compiler handles; without it, wrap `children` in `useCallback`.
+ *
+ * `getKey` doubles as the React key and is read once per item, like a key:
+ * it should only read the item, e.g. `(t) => t.id`.
+ *
+ *   <NarrowList store={todos} setStore={setTodos} getKey={(t) => t.id}>
+ *     {(todo, setTodo) => <TodoItem todo={todo} setTodo={setTodo} />}
+ *   </NarrowList>
+ */
+export function NarrowList<T extends Container, K extends Key>(props: {
+  store: T[]
+  setStore: SetStore<T[]>
+  getKey: (item: T) => K
+  children: (item: T, setItem: SetStore<T>) => ReactNode
+}) {
+  return props.store.map((item) => {
+    const key = props.getKey(item)
+    return (
+      <NarrowListItem
+        key={key}
+        itemKey={key}
+        item={item}
+        setStore={props.setStore}
+        getKey={props.getKey}
+        render={props.children}
+      />
+    )
+  })
+}
+
+type NarrowListItemProps = {
+  itemKey: Key
+  item: any
+  setStore: SetStore<any[]>
+  getKey: (item: any) => Key
+  render: (item: any, setItem: SetStore<any>) => ReactNode
+}
+
+const NarrowListItem = memo(
+  function NarrowListItem({ itemKey, item, setStore, getKey, render }: NarrowListItemProps) {
+    // Cached on the key, not on `getKey`, so an inline `getKey` doesn't rebuild it.
+    const setItem = useMemo(
+      () => narrowSetter(setStore, (items: any[]) => items.find((x) => getKey(x) === itemKey)),
+      [setStore, itemKey],
+    )
+    return render(item, setItem)
+  },
+  // `getKey` is ignored for the same reason; unchanged items keep their identity
+  // thanks to structural sharing, so `item` is all that changes for an edit.
+  (a, b) => a.item === b.item && a.itemKey === b.itemKey && a.setStore === b.setStore && a.render === b.render,
+)
 
 export interface ContextStore<T extends Container> {
   /** The current value; re-renders on change. */

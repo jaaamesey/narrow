@@ -5,6 +5,7 @@ import {
   createContextStore,
   createNarrowedStoreContext,
   Narrow,
+  NarrowList,
   useNarrowedStore,
   useNewStore,
   type SetStore,
@@ -295,6 +296,74 @@ describe('narrowing', () => {
     } finally {
       console.error = err
     }
+  })
+
+  it('<NarrowList>: writes go to the right item, by key, even after reordering', () => {
+    let setRoot!: SetStore<S>
+    const setters: Record<number, SetStore<Todo>> = {}
+    // Stands in for the React Compiler, which keeps an inline `children` stable.
+    const renderItem = (todo: Todo, setTodo: SetStore<Todo>) => {
+      setters[todo.id] = setTodo
+      return <li data-testid={`li${todo.id}`}>{todo.text}</li>
+    }
+    function App() {
+      const [store, set] = useNewStore(init())
+      setRoot = set
+      const [todos, setTodos] = useNarrowedStore(store, (s) => s.todos, set)
+      return <NarrowList store={todos} setStore={setTodos} getKey={(t) => t.id}>{renderItem}</NarrowList>
+    }
+    render(<App />)
+    act(() => setRoot((s) => void s.todos.reverse()))
+    act(() => setters[0]!((t) => void (t.text = 'first, now last')))
+    expect(screen.getByTestId('li0').textContent).toBe('first, now last')
+    expect(screen.getByTestId('li2').textContent).toBe('c')
+  })
+
+  it('<NarrowList>: editing one item re-renders only that item, and setters stay stable', () => {
+    // Hoisted to stand in for the React Compiler, which caches top-level inline functions.
+    const pickTodos = (s: S) => s.todos
+    const seen = new Set<unknown>()
+    let setRoot!: SetStore<S>
+    const renderItem = (todo: Todo, setTodo: SetStore<Todo>) => {
+      tick(`item${todo.id}`)
+      seen.add(setTodo)
+      return <button data-testid={`b${todo.id}`} onClick={() => setTodo((t) => void (t.done = !t.done))}>{String(todo.done)}</button>
+    }
+    function App() {
+      const [store, set] = useNewStore(init())
+      setRoot = set
+      const [todos, setTodos] = useNarrowedStore(store, pickTodos, set)
+      // Inline getKey: fine, it's read once per item.
+      return <NarrowList store={todos} setStore={setTodos} getKey={(t) => t.id}>{renderItem}</NarrowList>
+    }
+    render(<App />)
+    const before = { ...renders }
+    act(() => screen.getByTestId('b1').click())
+    act(() => setRoot((s) => void (s.title = 'unrelated')))
+    expect(screen.getByTestId('b1').textContent).toBe('true')
+    expect(renders.item1).toBe(before.item1! + 1)
+    expect(renders.item0).toBe(before.item0)
+    expect(renders.item2).toBe(before.item2)
+    expect(seen.size).toBe(3) // one setter per item, never rebuilt
+  })
+
+  it('<NarrowList>: a stale setter for a removed item is a no-op', () => {
+    let setRoot!: SetStore<S>
+    let staleSet!: SetStore<Todo>
+    const renderItem = (todo: Todo, setTodo: SetStore<Todo>) => {
+      if (todo.id === 2) staleSet = setTodo
+      return <li data-testid={`li${todo.id}`}>{todo.text}</li>
+    }
+    function App() {
+      const [store, set] = useNewStore(init())
+      setRoot = set
+      const [todos, setTodos] = useNarrowedStore(store, (s) => s.todos, set)
+      return <NarrowList store={todos} setStore={setTodos} getKey={(t) => t.id}>{renderItem}</NarrowList>
+    }
+    render(<App />)
+    act(() => setRoot((s) => void s.todos.pop()))
+    expect(() => act(() => staleSet((t) => void (t.text = 'nope')))).not.toThrow()
+    expect(screen.queryByTestId('li2')).toBeNull()
   })
 
   it('narrowing a narrowed value: pass the narrowed value and narrowed setter', () => {

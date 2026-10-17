@@ -4,6 +4,7 @@ export {
   useNewStore,
   useNarrowedStore,
   Narrow,
+  NarrowList,
   createContextStore,
   createNarrowedStoreContext,
 } from './react'
