@@ -168,6 +168,24 @@ describe('narrowing', () => {
     expect(screen.getByTestId('ro').textContent).toBe('aundefined')
   })
 
+  it('deps re-target the setter; an unchanged deps list keeps it stable', () => {
+    const setters: unknown[] = []
+    function App({ i }: { i: number }) {
+      const [store, set] = useNewStore(init())
+      const [todo, setTodo] = useNarrowedStore(store, (s) => s.todos[i]!, set, [i])
+      setters.push(setTodo)
+      return <button data-testid="b" onClick={() => setTodo((t) => void (t.text = 'hit'))}>{todo.text}</button>
+    }
+    const { rerender } = render(<App i={0} />)
+    rerender(<App i={0} />)
+    expect(setters[0]).toBe(setters[1])
+    rerender(<App i={1} />)
+    expect(setters[2]).not.toBe(setters[1])
+    expect(screen.getByTestId('b').textContent).toBe('b')
+    act(() => screen.getByTestId('b').click())
+    expect(screen.getByTestId('b').textContent).toBe('hit') // wrote to todo 1, the new target
+  })
+
   it('the narrowed setter is stable, even with an inline narrowFn', () => {
     const setters = new Set<unknown>()
     let bump!: () => void
@@ -324,21 +342,25 @@ describe('narrowing', () => {
     expect(renders.write).toBe(2) // once per Provider, from mount only
   })
 
-  it('narrowed context re-targets when remounted with a new key/arg', () => {
+  it('narrowed context follows a changing arg, for reads and writes', () => {
     const todosDef = createContextStore<S>()
     const todoDef = createNarrowedStoreContext(todosDef, (s, i: number) => s.todos[i]!)
+    let set!: ReturnType<typeof todoDef.useSet>
     function View() {
+      set = todoDef.useSet()
       return <div data-testid="v">{todoDef.use().text}</div>
     }
     const ui = (i: number) => (
       <todosDef.Provider initial={init()}>
-        <todoDef.Provider key={i} arg={i}><View /></todoDef.Provider>
+        <todoDef.Provider arg={i}><View /></todoDef.Provider>
       </todosDef.Provider>
     )
     const { rerender } = render(ui(0))
     expect(screen.getByTestId('v').textContent).toBe('a')
     rerender(ui(2))
     expect(screen.getByTestId('v').textContent).toBe('c')
+    act(() => set((t) => void (t.text = 'written')))
+    expect(screen.getByTestId('v').textContent).toBe('written') // wrote to todo 2, not the stale todo 0
   })
 
   it('narrowed context falls back to its default when nothing is provided', () => {

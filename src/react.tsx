@@ -1,6 +1,8 @@
 import {
   createContext,
+  type DependencyList,
   useContext,
+  useMemo,
   useState,
   useSyncExternalStore,
   type ReactNode,
@@ -16,12 +18,11 @@ export function useNewStore<T extends Container>(initial: T | (() => T)): [T, Se
 /**
  * Narrow `store` to the object/array `narrowFn` returns.
  *
- * Pass the parent's setter to get a (stable) narrowed setter. Leave it out
- * and the result is read-only: `[value]`.
+ * Pass the parent's setter to get a narrowed setter. Leave it out and the
+ * result is read-only: `[value]`.
  *
- * `narrowFn` and `setStore` are read once, on mount, and must not change for
- * the life of the component. If the target depends on a prop (an id or index),
- * give the component a `key` so it remounts when that changes.
+ * Like `useMemo`/`useCallback`, the setter is rebuilt only when `deps` change
+ * (or `setStore` does). List every outside value `narrowFn` reads, e.g. an index.
  */
 export function useNarrowedStore<T extends Container, N extends Container>(
   store: T,
@@ -31,15 +32,17 @@ export function useNarrowedStore<T extends Container, N extends Container>(
   store: T,
   narrowFn: (state: T) => N,
   setStore: SetStore<T>,
+  deps?: DependencyList,
 ): [N, SetStore<N>]
 export function useNarrowedStore<T extends Container, N extends Container>(
   store: T,
   narrowFn: (state: T) => N,
   setStore?: SetStore<T>,
+  deps: DependencyList = [],
 ): [N] | [N, SetStore<N>] {
-  const [narrowed] = useState(() => ({ fn: narrowFn, set: setStore && narrowSetter(setStore, narrowFn) }))
-  const value = narrowed.fn(store)
-  return narrowed.set ? [value, narrowed.set] : [value]
+  const set = useMemo(() => setStore && narrowSetter(setStore, narrowFn), [setStore, ...deps])
+  const value = narrowFn(store)
+  return set ? [value, set] : [value]
 }
 
 type NarrowProps<T extends Container, N extends Container> = { store: T; by: (state: T) => N }
@@ -47,18 +50,18 @@ type NarrowProps<T extends Container, N extends Container> = { store: T; by: (st
 /**
  * Narrow in JSX; same rules as `useNarrowedStore` (no `setStore` = read-only).
  *
- *   <Narrow store={store} setStore={setStore} by={(s) => s.todos[i]!}>
+ *   <Narrow store={store} setStore={setStore} by={(s) => s.todos[i]!} deps={[i]}>
  *     {(todo, setTodo) => <Todo todo={todo} onToggle={() => setTodo((t) => { t.done = !t.done })} />}
  *   </Narrow>
  */
 export function Narrow<T extends Container, N extends Container>(
-  props: NarrowProps<T, N> & { setStore: SetStore<T>; children: (value: N, set: SetStore<N>) => ReactNode },
+  props: NarrowProps<T, N> & { setStore: SetStore<T>; deps?: DependencyList; children: (value: N, set: SetStore<N>) => ReactNode },
 ): ReactNode
 export function Narrow<T extends Container, N extends Container>(
   props: NarrowProps<T, N> & { setStore?: undefined; children: (value: N) => ReactNode },
 ): ReactNode
 export function Narrow(props: any) {
-  const [value, set] = (useNarrowedStore as any)(props.store, props.by, props.setStore)
+  const [value, set] = (useNarrowedStore as any)(props.store, props.by, props.setStore, props.deps)
   return <>{props.children(value, set)}</>
 }
 
@@ -139,8 +142,7 @@ export function createContextStore<T extends Container>(fallback?: T): StoreCont
 /**
  * A context that is a narrowed view of another context (which can itself be
  * narrowed). `narrowFn` receives the parent state and the `arg` prop given to
- * the Provider, e.g. a list index. `arg` is read once: to change it, remount
- * the Provider with a `key`.
+ * the Provider, e.g. a list index. The setter follows `arg` changes.
  *
  *   const todoDef = createNarrowedStoreContext(todosDef, (s, i: number) => s.todos[i]!)
  *   <todoDef.Provider arg={i}><TodoRow /></todoDef.Provider>
@@ -154,7 +156,7 @@ export function createNarrowedStoreContext<T extends Container, N extends Contai
 } {
   const { def, Provide } = makeContext<N>(fallback)
   function Provider(props: { children?: ReactNode; arg?: A }) {
-    const [value, set] = useNarrowedStore(parent.use(), (s) => narrowFn(s, props.arg as A), parent.useSet())
+    const [value, set] = useNarrowedStore(parent.use(), (s) => narrowFn(s, props.arg as A), parent.useSet(), [props.arg])
     return <Provide value={value} set={set}>{props.children}</Provide>
   }
   return { ...def, Provider }
