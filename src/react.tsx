@@ -75,7 +75,7 @@ export function Narrow(props: any) {
 
 export interface ContextStore<T extends Container> {
   /** The current value; re-renders on change. */
-  use(): T
+  useVal(): T
   /** Stable setter; never re-renders the caller. Throws when called if only a default is available. */
   useSet(): SetStore<T>
 }
@@ -106,7 +106,7 @@ function makeContext<T extends Container>(fallback?: T) {
   const missing = () => new Error('narrow: no store found in context and no default was given')
 
   const def: ContextStore<T> = {
-    use() {
+    useVal() {
       const value = useContext(ValueCtx)
       if (value !== NONE) return value
       if (fallback !== undefined) return fallback
@@ -127,7 +127,7 @@ function makeContext<T extends Container>(fallback?: T) {
   return { def, Provide }
 }
 
-/** `fallback` is a read-only value returned by `use()` when no Provider is above. */
+/** `fallback` is a read-only value returned by `useVal()` when no Provider is above. */
 export function createContextStore<T extends Container>(fallback?: T): StoreContext<T> {
   const { def, Provide } = makeContext<T>(fallback)
   function Owned(p: { initial: T | (() => T); children?: ReactNode }) {
@@ -173,7 +173,7 @@ export function createNarrowedStoreContext<T extends Container, N extends Contai
       typeof narrow === 'function'
         ? (s) => narrow(s, arg)
         : { get: (s) => narrow.get(s, arg), swap: (d, v) => narrow.swap(d, v, arg) }
-    const [value, set] = useNarrowedStore(parent.use(), narrowed, parent.useSet(), [arg])
+    const [value, set] = useNarrowedStore(parent.useVal(), narrowed, parent.useSet(), [arg])
     return <Provide value={value} set={set}>{props.children}</Provide>
   }
   return { ...def, Provider }

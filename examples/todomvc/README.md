@@ -1,6 +1,6 @@
 # narrow • TodoMVC
 
-The standard [TodoMVC](https://todomvc.com) app, built with `narrow`.
+The standard [TodoMVC](https://todomvc.com) app, built with `narrow`, with the [React Compiler](https://react.dev/learn/react-compiler) enabled.
 
 ```sh
 npm install          # from the repo root (this is an npm workspace)

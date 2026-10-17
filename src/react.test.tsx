@@ -51,7 +51,7 @@ describe('context store', () => {
 
   function Title() {
     tick('title')
-    return <div data-testid="title">{def.use().title}</div>
+    return <div data-testid="title">{def.useVal().title}</div>
   }
   function SetterOnly() {
     tick('setter')
@@ -59,7 +59,7 @@ describe('context store', () => {
     return null
   }
 
-  it('shares one store through context; use() is the value, useSet() mutates it', () => {
+  it('shares one store through context; useVal() is the value, useSet() mutates it', () => {
     render(
       <def.Provider initial={init()}>
         <Title />
@@ -124,7 +124,7 @@ describe('context store', () => {
     let set!: typeof setStore
     function Reader() {
       set = withDefault.useSet() // obtaining the setter is fine...
-      return <div data-testid="r">{withDefault.use().title}</div>
+      return <div data-testid="r">{withDefault.useVal().title}</div>
     }
     render(<Reader />)
     expect(screen.getByTestId('r').textContent).toBe('t')
@@ -134,7 +134,7 @@ describe('context store', () => {
   it('a provider overrides the default', () => {
     const withDefault = createContextStore<S>(init())
     function Reader() {
-      return <div data-testid="r">{withDefault.use().title}</div>
+      return <div data-testid="r">{withDefault.useVal().title}</div>
     }
     render(<withDefault.Provider initial={{ ...init(), title: 'provided' }}><Reader /></withDefault.Provider>)
     expect(screen.getByTestId('r').textContent).toBe('provided')
@@ -319,7 +319,7 @@ describe('narrowing', () => {
     })
     function CtxView() {
       const set = entryDef.useSet()
-      return <button data-testid="ctx" onClick={() => set((t) => void (t.text = 'ctx'))}>{entryDef.use().text}</button>
+      return <button data-testid="ctx" onClick={() => set((t) => void (t.text = 'ctx'))}>{entryDef.useVal().text}</button>
     }
     function App() {
       const [store, setStore] = useNewStore<M>({ byId: new Map([['a', { id: 1, text: 'a', done: false }], ['b', { id: 2, text: 'b', done: false }]]) })
@@ -350,7 +350,7 @@ describe('narrowing', () => {
     }
     function TodoView() {
       setTodo = todoDef.useSet()
-      return <div data-testid="todo">{todoDef.use().text}</div>
+      return <div data-testid="todo">{todoDef.useVal().text}</div>
     }
     render(
       <todosDef.Provider initial={init()}>
@@ -376,7 +376,7 @@ describe('narrowing', () => {
     }
     function Reader({ i }: { i: number }) {
       tick(`read${i}`)
-      return <i>{todoDef.use().text}</i>
+      return <i>{todoDef.useVal().text}</i>
     }
     function Writer() {
       tick('write')
@@ -406,7 +406,7 @@ describe('narrowing', () => {
     let set!: ReturnType<typeof todoDef.useSet>
     function View() {
       set = todoDef.useSet()
-      return <div data-testid="v">{todoDef.use().text}</div>
+      return <div data-testid="v">{todoDef.useVal().text}</div>
     }
     const ui = (i: number) => (
       <todosDef.Provider initial={init()}>
@@ -425,7 +425,7 @@ describe('narrowing', () => {
     const todosDef = createContextStore<S>()
     const todoDef = createNarrowedStoreContext(todosDef, (s, i: number) => s.todos[i]!, { id: 7, text: 'dflt', done: false })
     function View() {
-      return <div data-testid="v">{todoDef.use().text}</div>
+      return <div data-testid="v">{todoDef.useVal().text}</div>
     }
     render(<View />)
     expect(screen.getByTestId('v').textContent).toBe('dflt')

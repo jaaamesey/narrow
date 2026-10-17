@@ -26,7 +26,7 @@ export function App() {
 }
 
 function Persist() {
-  const state = todosDef.use()
+  const state = todosDef.useVal()
   useEffect(() => saveState(state), [state])
   return null
 }
@@ -55,7 +55,7 @@ function Header() {
 }
 
 function Main() {
-  const { todos } = todosDef.use()
+  const { todos } = todosDef.useVal()
   const setTodos = todosDef.useSet()
   const filter = useFilter()
   // Stable for the life of the app, so it doesn't defeat TodoItem's `memo`.
@@ -103,7 +103,7 @@ const FILTERS: [Filter, string, string][] = [
 ]
 
 function Footer() {
-  const { todos } = todosDef.use()
+  const { todos } = todosDef.useVal()
   const setTodos = todosDef.useSet()
   const filter = useFilter()
   if (!todos.length) return null

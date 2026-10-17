@@ -7,9 +7,11 @@ import { todoDef } from './store'
  *
  * `memo` keeps it from re-rendering just because the list re-rendered, so it
  * only re-renders when its own todo changes (or `onDestroy` does, which is stable).
+ * It's needed even with the React Compiler, which creates new elements for each
+ * call of a `.map` callback.
  */
 export const TodoItem = memo(function TodoItem({ onDestroy }: { onDestroy: (id: string) => void }) {
-  const todo = todoDef.use()
+  const todo = todoDef.useVal()
   const setTodo = todoDef.useSet()
   const [editing, setEditing] = useState(false)
 

@@ -27,13 +27,13 @@ const storeDef = createContextStore<State>(/* optional default value */)
 
 <storeDef.Provider initial={...}>                       {/* own a new store */}
 <storeDef.Provider store={store} setStore={setStore}>   {/* share one from useNewStore */}
-const store = storeDef.use()        // value; re-renders on change
+const store = storeDef.useVal()        // value; re-renders on change
 const setStore = storeDef.useSet()  // stable, never re-renders
 ```
 
 Value and setter live in separate React contexts, so setter-only consumers never re-render.
 
-Without a Provider, `use()` returns the default value, like React's `createContext(default)`. It's read-only: calling the setter throws. With no default, both hooks throw.
+Without a Provider, `useVal()` returns the default value, like React's `createContext(default)`. It's read-only: calling the setter throws. With no default, both hooks throw.
 
 ## Narrowing
 
@@ -53,7 +53,7 @@ const [todo] = useNarrowedStore(store, (s) => s.todos[i]!)
 const [text, setText] = useNarrowedStore(todo, (t) => t.meta, setTodo)
 
 const todoDef = createNarrowedStoreContext(storeDef, (s, i: number) => s.todos[i]!)
-<todoDef.Provider narrowArg={i}><TodoRow /></todoDef.Provider>   // todoDef.use() / useSet() inside
+<todoDef.Provider narrowArg={i}><TodoRow /></todoDef.Provider>   // todoDef.useVal() / useSet() inside
 // narrowArg is compared with Object.is (like a dependency), so prefer an id or index over an object literal
 ```
 
