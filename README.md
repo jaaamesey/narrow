@@ -52,7 +52,7 @@ const todoDef = createNarrowedStoreContext(storeDef, (s, i: number) => s.todos[i
 <todoDef.Provider arg={i}><TodoRow /></todoDef.Provider>   // todoDef.use() / useSet() inside
 ```
 
-- Narrow functions must return an object/array/Map/Set (enforced by types) located *inside* the parent state. Inline functions are fine, and the narrowed setter is stable as long as the parent setter is.
+- Narrow functions must return an object/array/Map/Set (enforced by types) located *inside* the parent state. The narrowed setter is stable as long as the parent setter *and* the narrow function are, so wrap the function in `useCallback` if you need that (an inline function still works, it just gives a new setter each render). Narrowed contexts handle this for you.
 - Swapping a narrowed store replaces its contents in place (same kind only), so untouched siblings keep their identity.
 - A narrowed setter for a node that no longer exists is a no-op (so a stale handler can't throw).
 

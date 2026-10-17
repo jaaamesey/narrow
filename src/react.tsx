@@ -1,9 +1,8 @@
 import {
   createContext,
+  useCallback,
   useContext,
-  useLayoutEffect,
   useMemo,
-  useRef,
   useState,
   useSyncExternalStore,
   type ReactNode,
@@ -20,8 +19,8 @@ export function useNewStore<T extends Container>(initial: T | (() => T)): [T, Se
  * Narrow `store` to the object/array `narrowFn` returns.
  *
  * Pass the parent's setter to get a narrowed setter (stable as long as
- * `setStore` is). Leave it out and the result is read-only: `[value]`.
- * `narrowFn` may be an inline function.
+ * `setStore` and `narrowFn` are). Leave it out and the result is read-only:
+ * `[value]`. Wrap `narrowFn` in `useCallback` if you need a stable setter.
  */
 export function useNarrowedStore<T extends Container, N extends Container>(
   store: T,
@@ -37,9 +36,7 @@ export function useNarrowedStore<T extends Container, N extends Container>(
   narrowFn: (state: T) => N,
   setStore?: SetStore<T>,
 ): [N] | [N, SetStore<N>] {
-  const fn = useRef(narrowFn)
-  useLayoutEffect(() => void (fn.current = narrowFn))
-  const set = useMemo(() => setStore && narrowSetter(setStore, (s: T) => fn.current(s)), [setStore])
+  const set = useMemo(() => setStore && narrowSetter(setStore, narrowFn), [setStore, narrowFn])
   const value = narrowFn(store)
   return set ? [value, set] : [value]
 }
@@ -155,7 +152,8 @@ export function createNarrowedStoreContext<T extends Container, N extends Contai
 } {
   const { def, Provide } = makeContext<N>(fallback)
   function Provider(props: { children?: ReactNode; arg?: A }) {
-    const [value, set] = useNarrowedStore(parent.use(), (s) => narrowFn(s, props.arg as A), parent.useSet())
+    const by = useCallback((s: T) => narrowFn(s, props.arg as A), [props.arg])
+    const [value, set] = useNarrowedStore(parent.use(), by, parent.useSet())
     return <Provide value={value} set={set}>{props.children}</Provide>
   }
   return { ...def, Provider }

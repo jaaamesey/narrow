@@ -1,5 +1,5 @@
 import { act, render, screen } from '@testing-library/react'
-import { memo, StrictMode, useCallback } from 'react'
+import { memo, StrictMode } from 'react'
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   createContextStore,
@@ -141,11 +141,6 @@ describe('context store', () => {
 })
 
 describe('narrowing', () => {
-  const Row = memo(function Row({ id, value, toggle }: { id: number; value: Todo; toggle: () => void }) {
-    tick(`row${id}`)
-    return <li data-testid={`row${id}`} onClick={toggle}>{value.text}:{String(value.done)}</li>
-  })
-
   it('useNarrowedStore(store, fn, setStore) reads and writes through to the parent', () => {
     let setRoot!: (fn: (s: S) => void) => void
     function App() {
@@ -173,13 +168,14 @@ describe('narrowing', () => {
     expect(screen.getByTestId('ro').textContent).toBe('aundefined')
   })
 
-  it('the narrowed setter is stable even with an inline narrowFn', () => {
+  it('the narrowed setter is stable when narrowFn is', () => {
     const setters = new Set<unknown>()
     let bump!: () => void
+    const pick = (s: S) => s.todos[0]!
     function App() {
       const [store, set] = useNewStore(init())
       bump = () => set((s) => void (s.title += '.'))
-      const [, setTodo] = useNarrowedStore(store, (s) => s.todos[0]!, set)
+      const [, setTodo] = useNarrowedStore(store, pick, set)
       setters.add(setTodo)
       return null
     }
@@ -189,26 +185,31 @@ describe('narrowing', () => {
     expect(setters.size).toBe(1)
   })
 
-  it('<Narrow> items: toggling one row re-renders only that row', () => {
+  it('<Narrow> items: changing one row re-renders only that row (unchanged items keep identity)', () => {
+    const Row = memo(function Row({ id, value }: { id: number; value: Todo }) {
+      tick(`row${id}`)
+      return <li data-testid={`row${id}`}>{value.text}:{String(value.done)}</li>
+    })
     function List() {
       const [store, setStore] = useNewStore(init())
       return (
         <ul>
           {store.todos.map((t, i) => (
             <Narrow key={t.id} store={store} setStore={setStore} by={(s) => s.todos[i]!}>
-              {(todo, setTodo) => <Row id={i} value={todo} toggle={useStable(setTodo)} />}
+              {(todo, setTodo) => (
+                <>
+                  <Row id={i} value={todo} />
+                  <button data-testid={`t${i}`} onClick={() => setTodo((x) => void (x.done = !x.done))} />
+                </>
+              )}
             </Narrow>
           ))}
         </ul>
       )
     }
-    // Row is memo'd: give it a toggle that doesn't change identity.
-    function useStable(setTodo: (fn: (t: Todo) => void) => void) {
-      return useCallback(() => setTodo((x) => void (x.done = !x.done)), [setTodo])
-    }
     render(<List />)
     const before = { ...renders }
-    act(() => screen.getByTestId('row1').click())
+    act(() => screen.getByTestId('t1').click())
     expect(screen.getByTestId('row1').textContent).toBe('b:true')
     expect(renders.row1).toBe(before.row1! + 1)
     expect(renders.row0).toBe(before.row0)
