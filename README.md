@@ -124,6 +124,8 @@ const todoStore = createNarrowedStoreContext(appStore, (s, id: string) => s.todo
 <todoStore.Provider narrowArg={selectedId}>…</todoStore.Provider>
 ```
 
+`narrowArg` is compared like a hook dependency, so pass an id or index rather than an object literal.
+
 ### When a narrow function can't be traced
 
 Writes work out where the narrowed data lives by tracing the narrow function. Identity checks (`t === ref`), Map lookups and computed values can't be traced, so the update throws when React applies it, and the nearest error boundary catches it. Pass `get` and `swap` instead:
@@ -134,15 +136,12 @@ useNarrowedStore(state, { get: (s) => s.byId.get(id)!, swap: (d, todo) => { d.by
 
 ### Without the React Compiler
 
-Wrap inline narrow functions and `NarrowList` children in `useCallback`, or pass dependencies to the hook:
-
-```ts
-useNarrowedStore(state, (s) => s.todos[i], setState, [i])
-```
+Wrap inline narrow functions, and `NarrowList`'s `getKey` and `children`, in `useCallback`. Otherwise their setters are rebuilt on every render, and list items can't skip re-rendering.
 
 ### Edge cases
 
 - Setter functions run as React state updaters, so like `useState` updaters they must be pure. Strict Mode calls them twice.
+- Index keys (`getKey={(_, i) => i}`) need the full array as `items`. With a filtered list, the indexes point at the wrong items.
 - Reading narrowed data that no longer exists throws. Writing to it does nothing, so late async callbacks are safe.
 - Following Mutative, plain objects, arrays, Maps and Sets can be mutated. Dates and class instances are replaced, not mutated.
 

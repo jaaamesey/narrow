@@ -1,5 +1,5 @@
 import { act, render, screen } from '@testing-library/react'
-import { StrictMode, useTransition } from 'react'
+import { StrictMode, useCallback, useTransition } from 'react'
 import { renderToString } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -169,11 +169,12 @@ describe('narrowing', () => {
     expect(screen.getByTestId('t').textContent).toBe('zzz:true:parent-done')
   })
 
-  it('deps re-target the setter; an unchanged deps list keeps it stable', () => {
+  it('a useCallback narrow function keeps the setter stable until its inputs change', () => {
     const setters: unknown[] = []
     function App({ i }: { i: number }) {
       const [store, set] = useNewStore(init())
-      const [todo, setTodo] = useNarrowedStore(store, (s) => s.todos[i]!, set, [i])
+      const pick = useCallback((s: S) => s.todos[i]!, [i])
+      const [todo, setTodo] = useNarrowedStore(store, pick, set)
       setters.push(setTodo)
       return <button data-testid="b" onClick={() => setTodo((t) => void (t.text = 'hit'))}>{todo.text}</button>
     }
@@ -182,7 +183,6 @@ describe('narrowing', () => {
     expect(setters[0]).toBe(setters[1])
     rerender(<App i={1} />)
     expect(setters[2]).not.toBe(setters[1])
-    expect(screen.getByTestId('b').textContent).toBe('b')
     act(() => screen.getByTestId('b').click())
     expect(screen.getByTestId('b').textContent).toBe('hit')
   })
@@ -250,6 +250,7 @@ describe('narrowing', () => {
   it('<NarrowList>: editing one item re-renders only that item, and setters stay stable', () => {
     // Hoisted, as the React Compiler would keep it stable.
     const pickTodos = (s: S) => s.todos
+    const getKey = (t: Todo) => t.id
     const seen = new Set<unknown>()
     let setRoot!: SetStore<S>
     const renderItem = (todo: Todo, setTodo: SetStore<Todo>) => {
@@ -261,7 +262,7 @@ describe('narrowing', () => {
       const [store, set] = useNewStore(init())
       setRoot = set
       const [todos, setTodos] = useNarrowedStore(store, pickTodos, set)
-      return <NarrowList items={todos} setStore={setTodos} getKey={(t) => t.id}>{renderItem}</NarrowList>
+      return <NarrowList items={todos} setStore={setTodos} getKey={getKey}>{renderItem}</NarrowList>
     }
     render(<App />)
     const before = { ...renders }

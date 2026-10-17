@@ -1,4 +1,4 @@
-export type { SetStore, Container, Narrower } from './store.js'
+export type { SetStore, Narrower } from './store.js'
 export {
   useNewStore,
   useNarrowedStore,

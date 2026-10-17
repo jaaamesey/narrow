@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { applyUpdate, getterOf, narrowSetter, type Container, type Narrower, type SetStore } from './store'
+import { applyUpdate, getterOf, narrowSetter, type Narrower, type SetStore } from './store'
 
 // Applies setter calls like React's state updater would.
-function createStore<T extends Container>(initial: T) {
+function createStore<T extends object>(initial: T) {
   let state = initial
   const set = ((next: unknown, mode?: 'mutate' | 'swap') => {
     state = applyUpdate(state, next, mode)
@@ -10,7 +10,7 @@ function createStore<T extends Container>(initial: T) {
   return { get: () => state, set }
 }
 
-function narrowStore<T extends Container, N extends Container>(store: { get(): T; set: SetStore<T> }, narrow: Narrower<T, N>) {
+function narrowStore<T extends object, N extends object>(store: { get(): T; set: SetStore<T> }, narrow: Narrower<T, N>) {
   return { get: () => getterOf(narrow)(store.get()), set: narrowSetter(store.set, narrow) }
 }
 
