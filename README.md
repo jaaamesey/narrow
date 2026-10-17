@@ -1,9 +1,11 @@
 # narrow
 
-**`useState` for nested data.** Write updates as plain mutations, and get plain immutable state that works the way React expects.
+`useState` for nested data. Mutate it like a plain object, keep it as plain immutable React state, and hand any component just the slice it needs.
+
+No global store, no selectors, no actions. State is plain data that lives in your component tree and flows through props and context, so React and the React Compiler treat it like any other state. Writes go through [Mutative](https://github.com/unadlib/mutative), which turns your mutations into immutable updates.
 
 ```tsx
-// useState: rebuild every level by hand
+// Before: rebuild every level by hand
 setState((s) => ({
   ...s,
   projects: s.projects.map((p, i) =>
@@ -11,97 +13,125 @@ setState((s) => ({
   ),
 }))
 
-// narrow: just change it
+// After
 setState((s) => { s.projects[pi].tasks[ti].done = true })
 ```
 
-- **It's just React state.** Immutable values flow through props and context, with no global store, selectors, actions or proxies. It works with the [React Compiler](https://react.dev/learn/react-compiler) out of the box.
-- **Context included.** Share a store through a Provider. Components that only write never re-render.
-- **Narrow when it helps.** Hand a component just its slice of the state, with a setter for it ([below](#narrow-it)).
+## First, create a store
 
-Built on [Mutative](https://github.com/unadlib/mutative) and fully typed.
-
-## Create a store
+It works like `useState`, except a function you pass to the setter mutates a draft.
 
 ```tsx
-const [store, setStore] = useNewStore({ title: 'Todos', todos: [] as Todo[] })
+import { useNewStore } from 'narrow'
+
+function TodoApp() {
+  const [state, setState] = useNewStore({ title: 'Todos', todos: [] as Todo[] })
+
+  const add = (title: string) =>
+    setState((s) => {
+      s.todos.push({ id: crypto.randomUUID(), title, done: false })
+    })
+  // ...
+}
 ```
 
-It works like `useState`: `store` is the current value, and `setStore` is stable. There are three ways to set:
+To replace the state instead, pass a value, or a function with `'swap'`:
 
 ```ts
-setStore((s) => { s.title = 'Mine' })                // mutate a draft (the default for functions)
-setStore({ title: 'Mine', todos: [] })               // replace the state
-setStore((s) => ({ ...s, title: 'Mine' }), 'swap')   // replace, computed from the current state
+setState({ title: 'Todos', todos: [] })
+setState((s) => ({ ...s, todos: [] }), 'swap')
 ```
 
-Returning an object from a mutate function is a type error, which catches a forgotten `'swap'`.
+Returning a new object from a mutating function is a type error, so a forgotten `'swap'` doesn't slip through.
 
-## Narrow it
+## Then narrow it
 
-A `TodoItem` shouldn't need the whole app's store. Narrowing hands it just its todo and a setter for that todo:
-
-- **Encapsulation:** it only knows about a `Todo`, so it works wherever a todo lives.
-- **Concise code:** it writes `setTodo((t) => { t.done = true })` instead of finding itself in the list.
-- **Performance:** `NarrowList` re-renders an item only when that item changes, and a narrowed context re-renders its consumers only when their slice changes. Untouched data keeps its identity (structural sharing), so no selectors are needed.
+A todo row shouldn't need the whole app's state. Narrow the store, and the row gets its todo and a setter that writes back into the store. The row stays reusable, its updates are one line, and it doesn't re-render when other todos change.
 
 ```tsx
-const [todo, setTodo] = useNarrowedStore(store, (s) => s.todos[0], setStore)
-setTodo((t) => { t.done = true })                    // writes into `store`
-```
+const [todos, setTodos] = useNarrowedStore(state, (s) => s.todos, setState)
 
-A narrowed store works like any other store, and you can narrow it again.
-
-For lists, use `NarrowList`. Each item gets its own narrowed store, and only the item that changed re-renders:
-
-```tsx
 <NarrowList items={todos} setStore={setTodos} getKey={(t) => t.id}>
-  {(todo, setTodo) => <TodoItem todo={todo} setTodo={setTodo} />}
+  {(todo, setTodo) => <TodoRow todo={todo} setTodo={setTodo} />}
 </NarrowList>
+
+function TodoRow({ todo, setTodo }: { todo: Todo; setTodo: SetStore<Todo> }) {
+  return <input type="checkbox" checked={todo.done} onChange={() => setTodo((t) => { t.done = !t.done })} />
+}
 ```
 
-## Share it with context
+`NarrowList` gives each item its own narrowed store and re-renders only the items that changed. A narrowed store works like any other, so you can narrow it again.
+
+## Share it through context
 
 ```tsx
-const appStore = createContextStore<AppState>()        // optional default value
+const appStore = createContextStore<AppState>()
 
-<appStore.Provider initial={…}>…</appStore.Provider>   // or store={store} setStore={setStore}
+<appStore.Provider initial={…}>…</appStore.Provider>
 
 const state = appStore.useVal()     // re-renders when the state changes
-const setState = appStore.useSet()  // stable; never re-renders
+const setState = appStore.useSet()  // doesn't
 ```
 
-Narrow a context store to get a context that only re-renders for its slice:
+Narrowed contexts only re-render their consumers when their slice changes:
 
 ```tsx
 const settingsStore = createNarrowedStoreContext(appStore, (s) => s.settings)
-<settingsStore.Provider>…</settingsStore.Provider>      // settingsStore.useVal() / useSet() inside
 
-// To pick an item at runtime (e.g. from the URL), take a second parameter:
+<settingsStore.Provider>…</settingsStore.Provider>
+```
+
+### Why narrow over useState and context?
+
+- Nested updates are one line
+- Components that only write don't re-render when the state changes
+- Components get their slice of the state, not all of it
+
+### Why narrow over Zustand, Jotai or Valtio?
+
+- It's React state: plain values in your component tree, not module-level stores, atoms or proxies
+- Components receive a slice and a setter instead of reaching into a store by path
+- Lists re-render only the item that changed, without selectors or `memo`
+
+---
+
+# Recipes
+
+## Narrowing to an item picked at runtime
+
+Give the narrow function a second parameter, and pass it to the Provider:
+
+```tsx
 const todoStore = createNarrowedStoreContext(appStore, (s, id: string) => s.todos.find((t) => t.id === id)!)
+
 <todoStore.Provider narrowArg={selectedId}>…</todoStore.Provider>
 ```
 
-## Good to know
+## When a narrow function can't be traced
 
-- **Narrow functions must point at data inside the store.** For example `s.todos[i]` or `s.todos.find((t) => t.id === id)`, not a copy. If `narrow` can't work out where the data lives (identity checks like `t === ref`, Map lookups, computed values), the write throws. In that case, pass `{ get, swap }` instead of a function:
-  ```ts
-  useNarrowedStore(store, { get: (s) => s.byId.get(id)!, swap: (d, v) => { d.byId.set(id, v) } }, setStore)
-  ```
-- **Missing data:** reading a narrowed item that no longer exists throws. Writing to it does nothing, so late async callbacks are safe.
-- **Mutative's rules apply:** plain objects, arrays, Maps and Sets can be mutated in a setter. Dates and class instances get replaced (`s.when = new Date()`).
-- **Without the React Compiler**, wrap inline narrow functions and `NarrowList`'s `children` in `useCallback` to keep them stable, or pass dependencies to the hook: `useNarrowedStore(store, fn, setStore, [id])`.
+Writes work out where the narrowed data lives by tracing the narrow function. Identity checks (`t === ref`), Map lookups and computed values can't be traced, so the write throws. Pass `get` and `swap` instead:
 
-## How it compares
+```ts
+useNarrowedStore(state, { get: (s) => s.byId.get(id)!, swap: (d, todo) => { d.byId.set(id, todo) } }, setState)
+```
 
-Most state managers have components reach into a global store with selectors and actions (Zustand, Redux), or split state into atoms or proxies (Jotai, MobX, Valtio). `narrow` state is plain, immutable data that flows through props and context like `useState`, so React and the React Compiler work as usual. For encapsulation and concise code, narrowed writes give a component a setter for just its slice, so it never sees the rest of the state and updates are one-line mutations like `t.done = true`. For performance, narrowed reads (`NarrowList`, narrowed contexts) re-render only the components whose slice changed.
+## Without the React Compiler
+
+Wrap inline narrow functions and `NarrowList` children in `useCallback`, or pass dependencies to the hook:
+
+```ts
+useNarrowedStore(state, (s) => s.todos[i], setState, [i])
+```
+
+## Things to know
+
+- Reading narrowed data that no longer exists throws. Writing to it does nothing, so late async callbacks are safe.
+- Following Mutative, plain objects, arrays, Maps and Sets can be mutated. Dates and class instances are replaced, not mutated.
 
 ## Example
 
-[`examples/todomvc`](examples/todomvc) is the standard TodoMVC app, built with the React Compiler and no `memo`.
+[`examples/todomvc`](examples/todomvc) is TodoMVC built with `narrow` and the React Compiler, with no `memo`.
 
 ```sh
 npm install && npm run dev -w examples/todomvc
 ```
-
-`npm test` · `npm run typecheck`
