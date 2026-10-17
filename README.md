@@ -73,32 +73,32 @@ const todoStore = createNarrowedStoreContext(appStore, (s, id: string) => s.todo
 - **Mutative's rules apply:** plain objects, arrays, Maps and Sets can be mutated in a setter. Dates and class instances get replaced (`s.when = new Date()`).
 - **Without the React Compiler**, wrap inline narrow functions in `useCallback` to keep their setters stable, or pass dependencies: `useNarrowedStore(store, fn, setStore, [id])`.
 
-## Compared to other libraries
+## How other libraries compare
 
 **`useState`/`useReducer` + context** (built in)
-- ✅ No dependency.
-- ❌ Updating nested data means hand-written spreads or reducers. Context re-renders every consumer on any change.
-- `narrow` is this model (plain values, top-down, context), plus mutations, scoped setters and per-slice re-renders.
+- **Strengths:** No dependency.
+- **Drawbacks:** Updating nested data means hand-written spreads or reducers. Context re-renders every consumer on any change.
+- **With `narrow`:** the same model (plain values, top-down, context), plus mutations, scoped setters and per-slice re-renders.
 
 **Zustand** (the most popular)
-- ✅ Tiny, mature, devtools and middleware, and it works outside React.
-- ❌ Components subscribe with selectors that know the store's shape (`s => s.todos[i].done`). Reusable components need paths or ids passed in, and selectors that build new objects need `useShallow`.
-- `narrow` replaces selectors with narrowed stores: a component gets its slice and a setter, and never sees the global shape.
+- **Strengths:** Tiny, mature, devtools and middleware, and it works outside React.
+- **Drawbacks:** Components subscribe with selectors that know the store's shape (`s => s.todos[i].done`). Reusable components need paths or ids passed in, and selectors that build new objects need `useShallow`.
+- **With `narrow`:** no selectors. A component gets its slice and a setter, and never sees the global shape.
 
 **Redux Toolkit**
-- ✅ Predictable actions and reducers, excellent devtools (time travel), middleware and RTK Query. Uses Immer, like `narrow` uses Mutative.
-- ❌ More ceremony (slices, actions, selectors) and one global store.
-- `narrow` has no actions or devtools. Writes are direct and scoped.
+- **Strengths:** Predictable actions and reducers, excellent devtools (time travel), middleware and RTK Query. Uses Immer, like `narrow` uses Mutative.
+- **Drawbacks:** More ceremony (slices, actions, selectors) and one global store.
+- **With `narrow`:** no actions, and no devtools. Writes are direct and scoped.
 
 **Jotai**
-- ✅ Atoms are fine-grained by design. `focusAtom` and `splitAtom` are its version of narrowing.
-- ❌ State is split across many atoms. Focusing needs an optics library and a different mental model.
-- `narrow` keeps one plain object tree and narrows it with ordinary functions.
+- **Strengths:** Atoms are fine-grained by design. `focusAtom` and `splitAtom` are its version of narrowing.
+- **Drawbacks:** State is split across many atoms. Focusing needs an optics library and a different mental model.
+- **With `narrow`:** one plain object tree, narrowed with ordinary functions.
 
 **MobX / Valtio** (mutable proxies)
-- ✅ Mutate anywhere. Re-renders are tracked automatically, and passing a sub-object around is narrowing for free.
-- ❌ State lives in observables/proxies rather than plain objects, so you rely on the library's tracking instead of React's normal rendering.
-- `narrow` keeps plain immutable values that React and the React Compiler handle natively.
+- **Strengths:** Mutate anywhere. Re-renders are tracked automatically, and passing a sub-object around is narrowing for free.
+- **Drawbacks:** State lives in observables/proxies rather than plain objects, so you rely on the library's tracking instead of React's normal rendering.
+- **With `narrow`:** plain immutable values that React and the React Compiler handle natively.
 
 **Where `narrow` is weaker:** it's new and React-only, with no devtools, middleware or time travel. A store lives inside your component tree, not at module level, and some narrow functions need an explicit `{ get, swap }`. For server data, use a data-fetching library such as TanStack Query alongside any of these.
 
