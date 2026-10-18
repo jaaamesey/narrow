@@ -10,7 +10,7 @@
     "skipLibCheck": true,
     "isolatedModules": true,
     "types": ["vite/client"],
-    "paths": { "narrow": ["../../src/index.ts"] }
+    "paths": { "react-narrow": ["../../src/index.ts"] }
   },
   "include": ["src"]
 }

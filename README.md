@@ -1,4 +1,4 @@
-# narrow
+# react-narrow
 
 `useState` for nested data. Mutate it like a plain object, keep it as plain immutable React state, and hand any component just the slice it needs.
 
@@ -17,14 +17,14 @@ setState((s) => ({
 setState((s) => { s.projects[pi].tasks[ti].done = true })
 ```
 
-> **Warning:** `narrow` is still a 0.x release, so the API may change. Found a bug, or a case it doesn't handle? Please [open an issue](https://github.com/jaaamesey/narrow/issues).
+> **Warning:** `react-narrow` is still a 0.x release, so the API may change. Found a bug, or a case it doesn't handle? Please [open an issue](https://github.com/jaaamesey/narrow/issues).
 
 ## First, create a store
 
 It works like `useState`, except a function you pass to the setter mutates a draft.
 
 ```tsx
-import { useNewStore } from 'narrow'
+import { useNewStore } from 'react-narrow'
 
 function TodoApp() {
   const [state, setState] = useNewStore({ todos: [] as Todo[], settings: { showDone: true } })
@@ -94,7 +94,7 @@ const settingsStore = createNarrowedStoreContext(appStore, (s) => s.settings)
 <settingsStore.Provider>…</settingsStore.Provider>  // settingsStore.useVal() / useSet() inside
 ```
 
-## Why narrow?
+## Why react-narrow?
 
 ### Over useState and context
 
@@ -149,7 +149,7 @@ Wrap inline narrow functions, and `NarrowList`'s `getKey` and `children`, in `us
 
 ## Example
 
-[`examples/todomvc`](examples/todomvc) is TodoMVC built with `narrow` and the React Compiler, with no `memo`.
+[`examples/todomvc`](examples/todomvc) is TodoMVC built with `react-narrow` and the React Compiler, with no `memo`.
 
 ```sh
 npm install && npm run dev -w examples/todomvc

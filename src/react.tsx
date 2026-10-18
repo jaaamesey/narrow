@@ -25,7 +25,7 @@ export function useNarrowedStore<T extends object, N extends object>(
 ): [N, SetStore<N>] {
   const set = useMemo(() => narrowSetter(setStore, narrow), [setStore, narrow])
   const value = getterOf(narrow)(store)
-  if (value == null) throw new Error('narrow: the narrowed node is missing (narrow returned null/undefined)')
+  if (value == null) throw new Error('react-narrow: the narrowed node is missing (narrow returned null/undefined)')
   return [value, set]
 }
 
@@ -108,14 +108,14 @@ export interface StoreContext<T extends object> extends ContextStore<T> {
 const NONE = Symbol('no provider')
 
 const readOnlyDefault = (() => {
-  throw new Error('narrow: no store in context; the default value is read-only')
+  throw new Error('react-narrow: no store in context; the default value is read-only')
 }) as SetStore<any>
 
 // Separate value and setter contexts, so setter-only consumers don't re-render.
 function makeContext<T extends object>(fallback?: T) {
   const ValueCtx = createContext<T | typeof NONE>(NONE)
   const SetCtx = createContext<SetStore<T> | typeof NONE>(NONE)
-  const missing = () => new Error('narrow: no store found in context and no default was given')
+  const missing = () => new Error('react-narrow: no store found in context and no default was given')
 
   const def: ContextStore<T> = {
     useVal() {

@@ -31,7 +31,7 @@ export const getterOf = <T, N>(narrow: Narrower<T, N>) => (typeof narrow === 'fu
 const PATH = Symbol('path')
 const untraceable = (cause?: unknown) =>
   new Error(
-    'narrow: could not trace narrowFn to a node inside the state (it returned a copy/computed value, ' +
+    'react-narrow: could not trace narrowFn to a node inside the state (it returned a copy/computed value, ' +
       'or used an identity comparison or Map lookup). Pass { get, swap } instead.',
     { cause },
   )

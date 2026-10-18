@@ -1,6 +1,6 @@
-# narrow • TodoMVC
+# react-narrow • TodoMVC
 
-[TodoMVC](https://todomvc.com) built with `narrow` and the [React Compiler](https://react.dev/learn/react-compiler).
+[TodoMVC](https://todomvc.com) built with `react-narrow` and the [React Compiler](https://react.dev/learn/react-compiler).
 
 ```sh
 npm install                       # from the repo root

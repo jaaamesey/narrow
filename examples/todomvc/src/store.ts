@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { createContextStore } from 'narrow'
+import { createContextStore } from 'react-narrow'
 
 export type Todo = { id: string; title: string; completed: boolean }
 export type State = { todos: Todo[] }

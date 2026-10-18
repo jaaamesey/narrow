@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { NarrowList, useNarrowedStore } from 'narrow'
+import { NarrowList, useNarrowedStore } from 'react-narrow'
 import { TodoItem } from './TodoItem'
 import { loadState, saveState, todosDef, useFilter, type Filter } from './store'
 

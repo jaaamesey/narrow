@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { SetStore } from 'narrow'
+import type { SetStore } from 'react-narrow'
 import type { Todo } from './store'
 
 // Sees only its own todo and a setter for it, and re-renders only when that todo changes.
