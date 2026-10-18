@@ -31,28 +31,29 @@ export function useNarrowedStore<T extends object, N extends object>(
 
 type RenderItem<T extends object, K> = (item: T, setItem: SetStore<T>, key: K) => ReactNode
 
-/** Renders every item of an array with its own narrowed store; only changed items re-render. */
-export function NarrowList<T extends object>(props: {
-  items: T[]
-  setStore: SetStore<T[]>
-  getKey: (item: T, index: number) => Key
-  children: RenderItem<T, Key>
-}): ReactNode
-/** Renders every entry of a record with its own narrowed store; only changed entries re-render. */
-export function NarrowList<K extends string, T extends object>(props: {
-  items: Record<K, T>
-  setStore: SetStore<Record<K, T>>
-  getKey?: never
-  children: RenderItem<T, K>
-}): ReactNode
-/** Renders every entry of a Map with its own narrowed store; only changed entries re-render. */
-export function NarrowList<K extends Key, T extends object>(props: {
-  items: Map<K, T>
-  setStore: SetStore<Map<K, T>>
-  getKey?: never
-  children: RenderItem<T, K>
-}): ReactNode
-export function NarrowList({ items, setStore, getKey, children }: {
+interface NarrowListComponent {
+  <T extends object>(props: {
+    items: T[]
+    setStore: SetStore<T[]>
+    getKey: (item: T, index: number) => Key
+    children: RenderItem<T, Key>
+  }): ReactNode
+  <K extends string, T extends object>(props: {
+    items: Record<K, T>
+    setStore: SetStore<Record<K, T>>
+    getKey?: undefined
+    children: RenderItem<T, K>
+  }): ReactNode
+  <K extends Key, T extends object>(props: {
+    items: Map<K, T>
+    setStore: SetStore<Map<K, T>>
+    getKey?: undefined
+    children: RenderItem<T, K>
+  }): ReactNode
+}
+
+/** Renders every item of an array, record or Map with its own narrowed store; only changed items re-render. */
+export const NarrowList = memo(function NarrowList({ items, setStore, getKey, children }: {
   items: object[] | Record<string, object> | Map<Key, object>
   setStore: SetStore<any>
   getKey?: (item: object, index: number) => Key
@@ -67,7 +68,7 @@ export function NarrowList({ items, setStore, getKey, children }: {
   return entries.map(([key, item]) => (
     <NarrowListItem key={key} itemKey={key} item={item} kind={kind} setStore={setStore} getKey={getKey} render={children} />
   ))
-}
+}) as NarrowListComponent
 
 type ItemKind = 'array' | 'record' | 'map'
 

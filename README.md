@@ -58,7 +58,7 @@ setSettings((s) => { s.showDone = false })  // updates state.settings.showDone
 
 `(s) => s.settings` is the narrow function: it picks the part of the state to narrow to. A narrowed store works like any other, so you can pass it down and narrow it again.
 
-That's what makes components small. A todo row doesn't need the whole app's state, just its todo and a setter for it. It stays reusable, its updates are one line, and it doesn't re-render when other todos change (requires the React Compiler, or a `useCallback`). `NarrowList` does this for every item in a list:
+You can use `NarrowList` to pass just a single item in a store down to a component. This helper doesn't just isolate reads/writes to that item. Here (assuming you've enabled the React Compiler, or are manually memoizing), it also ensures that a `TodoRow` only re-renders when its own `todo` changes.
 
 ```tsx
 const [todos, setTodos] = useNarrowedStore(state, (s) => s.todos, setState)
@@ -96,27 +96,39 @@ const settingsStore = createNarrowedStoreContext(appStore, (s) => s.settings)
 
 ## Why react-narrow?
 
-### Over useState and context
+### What it's particularly useful for
+- Relatively deep, global-ish state that's frequently written to
+- Document editors: slide decks, whiteboards, diagrams, page builders
+- Builders: forms, surveys, workflows, product configurators
+- Large editable tables and lists: spreadsheets, Kanban boards, outliners
+- Timeline and layout editors: video, scheduling, floor plans, game levels
 
-- Nested updates are a one-line mutation, not a spread at every level
-- Components get their slice of the state and a setter for it, not all of it
-- Value and setter come in separate contexts, so components that only write don't re-render, without splitting contexts by hand
+### Where it's less useful
+- Data fetching (seriously, use react-query or something for that)
+- Anywhere outside of React (like `useState`, you can only pass down data and callbacks from the component tree)
+- Wherever extremely fine-grained rendering is needed (use a signals-based state library for that, or avoid React entirely)
+- Codebases that don't have the React Compiler enabled (a lot of the library's ergonomics lean on it)
 
-### Over useImmer
+### Why use this over useState and context?
 
-- Hand a child its slice and a setter that writes back, instead of the parent's whole state or a callback for every kind of edit
-- Context stores are built in, including narrowed contexts that only re-render for their slice
-- `NarrowList` gives every list item its own stable setter, so unchanged items skip re-rendering (requires the React Compiler, or a `useCallback`). With `useImmer`, you'd pass ids and stable callbacks by hand
+- A deep update is one line, not a spread at every level, where missing one level silently drops data
+- A child gets its slice and a setter scoped to it. It can make any edit to that slice, can't touch anything else, and doesn't need to know where the slice lives
+- Value and setter come in separate contexts, so components that only write never re-render. Put `[state, setState]` in one context and every consumer re-renders on every change
 
-### Over Zustand, Jotai or Valtio
+### Why use this over useImmer?
 
-- It's React state: plain values in your component tree, not module-level stores, atoms or proxies
-- Updates are ordinary `useState` updates, so they batch and work with transitions. Stores read through `useSyncExternalStore`, like Zustand and Valtio, fall back to blocking updates inside a transition
-- Components receive a slice and a setter instead of reaching into a store by path
+- `useImmer` makes the top-level update easy, but a child still needs the whole state or a callback for every kind of edit (`onToggle`, `onRename`, …). Here it gets `[todo, setTodo]` and makes the edit itself
+- Context stores are built in, so you don't hand-roll a provider and a memoized value. Narrowed contexts re-render only for their slice
+- `NarrowList` gives every item a stable setter, so unchanged rows skip re-rendering (with the React Compiler, or `useCallback`). With `useImmer`, you'd thread ids and memoized callbacks through by hand to get the same result
 
-## Details
+### Why use this over Zustand, Jotai or Valtio?
 
-### Narrowing to an item picked at runtime
+- It's React state: it still lives in your component tree, behaves exactly as React would expect (making it safe with concurrent and compiler features), and doesn't need snapshots to be taken 
+- Updates are ordinary `useState` updates, so they batch and work with transitions. Zustand and Valtio read through `useSyncExternalStore`, so an update inside `startTransition` still blocks
+- Components take a slice and a setter as props, so they work with any store and test with plain values, instead of being wired to one global store by path
+
+
+## Narrowing to an item picked at runtime
 
 Give the narrow function a second parameter, and pass it to the Provider:
 
@@ -126,21 +138,7 @@ const todoStore = createNarrowedStoreContext(appStore, (s, id: string) => s.todo
 <todoStore.Provider narrowArg={selectedId}>…</todoStore.Provider>
 ```
 
-`narrowArg` is compared like a hook dependency, so pass an id or index rather than an object literal.
-
-### When a narrow function can't be traced
-
-Writes work out where the narrowed data lives by tracing the narrow function. Identity checks (`t === ref`), Map lookups and computed values can't be traced, so the update throws when React applies it, and the nearest error boundary catches it. Pass `get` and `swap` instead:
-
-```ts
-useNarrowedStore(state, { get: (s) => s.byId.get(id)!, swap: (d, todo) => { d.byId.set(id, todo) } }, setState)
-```
-
-### Without the React Compiler
-
-Wrap inline narrow functions, and `NarrowList`'s `getKey` and `children`, in `useCallback`. Otherwise their setters are rebuilt on every render, and list items can't skip re-rendering.
-
-### Edge cases
+## Edge cases
 
 - Setter functions run as React state updaters, so like `useState` updaters they must be pure. Strict Mode calls them twice.
 - Index keys (`getKey={(_, i) => i}`) need the full array as `items`. With a filtered list, the indexes point at the wrong items.

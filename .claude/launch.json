@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "todomvc",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--workspace", "examples/todomvc", "--", "--port", "5173", "--strictPort"],
+      "port": 5173
+    },
+    {
+      "name": "slides",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--workspace", "examples/slides", "--", "--port", "5174", "--strictPort"],
+      "port": 5174
+    }
+  ]
+}
