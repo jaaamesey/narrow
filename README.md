@@ -147,10 +147,9 @@ Wrap inline narrow functions, and `NarrowList`'s `getKey` and `children`, in `us
 - Reading narrowed data that no longer exists throws. Writing to it does nothing, so late async callbacks are safe.
 - Following Mutative, plain objects, arrays, Maps and Sets can be mutated. Dates and class instances are replaced, not mutated.
 
-## Example
+## Examples
 
-[`examples/todomvc`](examples/todomvc) is TodoMVC built with `react-narrow` and the React Compiler, with no `memo`.
+- [`examples/slides`](examples/slides): a slide deck editor. Dragging a shape re-renders only that shape and its slide's thumbnail.
+- [`examples/todomvc`](examples/todomvc): TodoMVC.
 
-```sh
-npm install && npm run dev -w examples/todomvc
-```
+Both use the React Compiler and no `memo`. Run one with `npm install && npm run dev -w examples/slides`.
