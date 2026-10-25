@@ -7,3 +7,7 @@ export {
   createNarrowedStoreContext,
 } from './react.js'
 export type { ContextStore, StoreContext } from './react.js'
+// Re-exported so recipes always use the same Mutative copy as the library: `original()` and `current()` only
+// accept drafts created by the copy that made them.
+export { original, current } from 'mutative'
+export type { Draft } from 'mutative'

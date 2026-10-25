@@ -128,6 +128,20 @@ const settingsStore = createNarrowedStoreContext(appStore, (s) => s.settings)
 - Components take a slice and a setter as props, so they work with any store and test with plain values, instead of being wired to one global store by path
 
 
+## Reading the pre-edit value in a recipe
+
+`original` and `current` are re-exported from Mutative, so you don't need to depend on it yourself. Inside a mutating function, `original(draft)` is the value from before the edit and `current(draft)` is a snapshot of the draft so far. They only work on drafts from the same copy of Mutative that `react-narrow` uses, which is why they come from here.
+
+```ts
+import { original } from 'react-narrow'
+
+// Only apply this write if the slice hasn't been replaced since `basis` was read
+setSlice((s) => {
+  if (original(s) !== basis) return
+  s.title = result
+})
+```
+
 ## Narrowing to an item picked at runtime
 
 Give the narrow function a second parameter, and pass it to the Provider:
