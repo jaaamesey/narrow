@@ -1,6 +1,7 @@
 import {
   createContext,
   memo,
+  useCallback,
   type Key,
   useContext,
   useMemo,
@@ -18,7 +19,6 @@ import {
   isActionSet,
   readLevel,
   type RootActions,
-  sameLevel,
 } from './actions.js'
 import { applyUpdate, getterOf, narrowSetter, type Narrower, type SetStore } from './store.js'
 
@@ -44,8 +44,8 @@ export function useNewStore(initial: any, actions?: RootActions): [any, any] {
  * Narrows a store to the part `narrow` picks, returning that part and a setter that writes back into the store.
  *
  * For an action store, pick a level from its actions instead, like `useNarrowedStore(app, (a) => a.todo(id),
- * appActions)`: it returns that level's value and its actions, both from the one pick, so they can't disagree. The
- * level keeps its identity across renders while it leads to the same place.
+ * appActions)`: it returns that level's value and its actions, both from the one pick, so they can't disagree. Like
+ * the setter, the level keeps its identity while `pick` does.
  */
 export function useNarrowedStore<T extends object, N extends object>(store: T, narrow: Narrower<T, N>, setStore: SetStore<T>): [N, SetStore<N>]
 export function useNarrowedStore<T extends object, B extends object, L extends object>(
@@ -55,18 +55,14 @@ export function useNarrowedStore<T extends object, B extends object, L extends o
 ): [BoundState<L>, L]
 export function useNarrowedStore(store: object, narrow: any, setStoreOrActions: any): [any, any] {
   const isActions = typeof setStoreOrActions !== 'function'
-  const set = useMemo(() => (isActions ? undefined : narrowSetter(setStoreOrActions, narrow)), [isActions, setStoreOrActions, narrow])
-  // A new level each render, but the one already held is kept while it leads to the same place.
-  const picked: object | undefined = isActions ? narrow(setStoreOrActions) : undefined
-  const [held, setHeld] = useState(picked)
-  let level = held
-  if (picked && (!held || !sameLevel(held, picked))) {
-    setHeld(picked)
-    level = picked
-  }
-  const value = isActions ? readLevel(setStoreOrActions, store, level!) : getterOf(narrow)(store)
+  // The setter, or the picked level: either way, kept while the store and `narrow` are.
+  const narrowed = useMemo(
+    () => (isActions ? narrow(setStoreOrActions) : narrowSetter(setStoreOrActions, narrow)),
+    [isActions, setStoreOrActions, narrow],
+  )
+  const value = isActions ? readLevel(setStoreOrActions, store, narrowed) : getterOf(narrow)(store)
   if (value == null) throw new Error('react-narrow: the narrowed node is missing (narrow returned null/undefined)')
-  return [value, isActions ? level : set]
+  return [value, narrowed]
 }
 
 type RenderItem<T extends object, K> = (item: T, setItem: SetStore<T>, key: K) => ReactNode
@@ -325,7 +321,8 @@ function narrowActionContext<T, B extends object, N extends object, A>(
   const { def, Provide } = makeActionContext<BoundState<N>, N>()
   function Provider(props: { children?: ReactNode; narrowArg?: A }) {
     const arg = props.narrowArg as A
-    const [value, level] = useNarrowedStore(useVal() as object, (actions: B) => pick(actions, arg), useActions())
+    const pickHere = useCallback((actions: B) => pick(actions, arg), [arg])
+    const [value, level] = useNarrowedStore(useVal() as object, pickHere, useActions())
     return <Provide value={value} actions={level}>{props.children}</Provide>
   }
   return { ...def, Provider }

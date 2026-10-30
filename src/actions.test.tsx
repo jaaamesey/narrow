@@ -1,5 +1,5 @@
 import { act, render, screen } from '@testing-library/react'
-import { StrictMode, useMemo, useState } from 'react'
+import { StrictMode, useCallback, useMemo, useState } from 'react'
 import { original } from 'mutative'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import {
@@ -895,7 +895,7 @@ describe('useNarrowedStore with an action store', () => {
     act(() => firstActions.setText('A'))
     expect(first.text).toBe('A')
   })
-  it('keeps the level while it leads to the same item, and swaps it when the pick changes', () => {
+  it('keeps the level while the pick function is the same, and swaps it when the pick changes', () => {
     const levels: TodoLevel[] = []
     let setId!: (id: number) => void
     let appActions!: App
@@ -904,7 +904,9 @@ describe('useNarrowedStore with an action store', () => {
       setId = setIdState
       const [app, actions] = useNewStore(init, appActionSet)
       appActions = actions
-      const [, todoActions] = useNarrowedStore(app, (a) => a.todos.item(id), actions)
+      // Stable without the React Compiler too, like the narrow function of a setter store.
+      const pick = useCallback((a: App) => a.todos.item(id), [id])
+      const [, todoActions] = useNarrowedStore(app, pick, actions)
       levels.push(todoActions)
       return null
     }
@@ -915,6 +917,21 @@ describe('useNarrowedStore with an action store', () => {
     expect(levels.at(-1)).not.toBe(levels[0])
     act(() => appActions.rename('y'))
     expect(levels.at(-1)).toBe(levels.at(-2))
+  })
+  it('doesn’t loop when the set is (wrongly) made during render', () => {
+    let toggle!: () => void
+    function Comp() {
+      const set = defineActions<S>()({}, (narrow) => ({
+        todo: narrow((s, id: number) => s.todos.find((t) => t.id === id), todoActionSet),
+      }))
+      const [app, appActions] = useNewStore(init, set)
+      const [todo, todoActions] = useNarrowedStore(app, (a) => a.todo(1), appActions)
+      toggle = todoActions.toggle
+      return <span data-testid="done">{String(todo.done)}</span>
+    }
+    render(<Comp />)
+    act(() => toggle())
+    expect(screen.getByTestId('done').textContent).toBe('true')
   })
   it('throws when the picked item is missing, like the setter form', () => {
     function Comp() {

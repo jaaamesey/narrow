@@ -152,7 +152,7 @@ function Compare({ app, appActions, leftId, rightId }: Props) {
 }
 ```
 
-The level keeps its identity across renders while the pick leads to the same item, so it's safe to pass to memoized components. Like the setter form, it throws if the item is missing.
+Like a setter store's narrowed setter, the level keeps its identity while the pick function does: the React Compiler keeps an inline one stable, or use `useCallback`. Like the setter form, it throws if the item is missing.
 
 ## What a level needs from above
 
@@ -237,6 +237,7 @@ const todoStore = createNarrowedStoreContext(appStore, (appActions, id: string) 
 - Actions run as state updaters, so they must be pure. Make ids or timestamps outside and pass them in. For the same reason, bound actions return nothing.
 - An action that both mutates the state and returns a value throws.
 - An action that ignores the state still needs it as its first parameter (`reset(_: Counter)`), since that's where the type comes from.
+- Define action sets at module level, not inside a component: a set made during render is new every render, and so are its bound actions.
 - A narrow function takes an argument if it declares a second parameter. Don't give that parameter a default value.
 - Get a value and its actions from the same place, so they can't come from different items or stores: `useNarrowedStore`, `NarrowList` and narrowed contexts each hand them out together.
 

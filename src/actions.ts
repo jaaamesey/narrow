@@ -178,7 +178,7 @@ function runAt(root: unknown, steps: Step[], context: unknown, action: Actions<a
 }
 
 
-// On each bound level: its parent level, and the narrowing that leads to it from there (see readLevel, sameLevel).
+// On each bound level: its parent level, and the narrowing that leads to it from there (see readLevel).
 const LEVEL = Symbol('react-narrow level')
 interface LevelInfo {
   parent: object
@@ -305,9 +305,3 @@ export function readLevel(top: object, topValue: unknown, level: object): unknow
   return path.reduce<unknown>((v, { child, arg }) => (v == null ? v : getNode(child.narrow, v, arg)), topValue)
 }
 
-/** Whether two bound levels lead to the same place: the same narrowing, with the same arguments, from the same root. */
-export function sameLevel(a: object, b: object): boolean {
-  if (a === b) return true
-  const [x, y] = [infoOf(a), infoOf(b)]
-  return !!x && !!y && x.child === y.child && Object.is(x.arg, y.arg) && sameLevel(x.parent, y.parent)
-}
