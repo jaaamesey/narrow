@@ -19,6 +19,8 @@ setState((s) => { s.projects[pi].tasks[ti].done = true })
 
 > **Warning:** `react-narrow` is still a 0.x release, so the API may change. Found a bug, or a case it doesn't handle? Please [open an issue](https://github.com/jaaamesey/narrow/issues).
 
+Needs React 19, and TypeScript 5.5 or later if you use TypeScript.
+
 ## First, create a store
 
 It works like `useState`, except a function you pass to the setter mutates a draft.
