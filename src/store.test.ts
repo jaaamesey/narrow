@@ -280,3 +280,101 @@ describe('narrowStore', () => {
     void bad
   })
 })
+
+describe('narrowed writes go down the path, not through the whole store', () => {
+  type Item = { id: string; x: number }
+  type Page = { source: number; items: Item[] }
+  type Doc = { work: { pages: Page[] }; ui: { page: number } }
+  const doc = (pages = 4, per = 3): Doc => ({
+    work: { pages: Array.from({ length: pages }, (_, source) => ({ source, items: Array.from({ length: per }, (_, i) => ({ id: `${source}-${i}`, x: 0 })) })) },
+    ui: { page: 0 },
+  })
+  // state -> work.pages -> page by source -> items -> item by id, as an editor builds it.
+  const chain = (store: { get(): Doc; set: SetStore<Doc> }, source: number, id: string) => {
+    const pages = narrowStore(store, (s) => s.work.pages)
+    const page = narrowStore(pages, (ps) => ps.find((p) => p.source === source)!)
+    const items = narrowStore(page, (p) => p.items)
+    const item = narrowStore(items, (its) => its.find((it) => it.id === id)!)
+    return { pages, page, items, item }
+  }
+
+  it('an edit four levels down changes only that item and shares everything else', () => {
+    const store = createStore(doc())
+    const before = store.get()
+    chain(store, 2, '2-1').item.set((it) => { it.x = 5 })
+    const after = store.get()
+    expect(after.work.pages[2]!.items[1]!.x).toBe(5)
+    expect(before.work.pages[2]!.items[1]!.x).toBe(0)
+    expect(after.work.pages[0]).toBe(before.work.pages[0])
+    expect(after.work.pages[1]).toBe(before.work.pages[1])
+    expect(after.work.pages[3]).toBe(before.work.pages[3])
+    expect(after.work.pages[2]!.items[0]).toBe(before.work.pages[2]!.items[0])
+    expect(after.ui).toBe(before.ui)
+  })
+
+  it('a swap at any level replaces that level and shares the rest', () => {
+    const store = createStore(doc())
+    const before = store.get()
+    const { item, items, page } = chain(store, 1, '1-0')
+    item.set({ id: '1-0', x: 9 })
+    expect(store.get().work.pages[1]!.items[0]).toEqual({ id: '1-0', x: 9 })
+    items.set((its) => its.filter((it) => it.id !== '1-2'), 'swap')
+    expect(store.get().work.pages[1]!.items.map((it) => it.id)).toEqual(['1-0', '1-1'])
+    page.set((p) => ({ ...p, items: [] }), 'swap')
+    expect(store.get().work.pages[1]!.items).toEqual([])
+    expect(store.get().work.pages[0]).toBe(before.work.pages[0])
+  })
+
+  it('a write that changes nothing returns the very same state, at every level', () => {
+    const store = createStore(doc())
+    const before = store.get()
+    const { item, items, page, pages } = chain(store, 1, '1-1')
+    item.set((it) => void it.x)
+    item.set(before.work.pages[1]!.items[1]!)
+    items.set((its) => its, 'swap')
+    page.set((p) => { void p.source })
+    pages.set((ps) => ps, 'swap')
+    expect(store.get()).toBe(before)
+  })
+
+  it('a node that is gone is a silent no-op', () => {
+    const store = createStore(doc())
+    const before = store.get()
+    const { item } = chain(store, 1, 'nope')
+    item.set((it) => { it.x = 1 })
+    expect(store.get()).toBe(before)
+  })
+
+  it('a narrowing that is the whole store can still be swapped', () => {
+    const store = createStore(doc(1, 1))
+    const all = narrowStore(store, (s) => s)
+    all.set({ ...doc(2, 1), ui: { page: 1 } })
+    expect(store.get().work.pages).toHaveLength(2)
+    expect(store.get().ui.page).toBe(1)
+    all.set((s) => { s.ui.page = 0 })
+    expect(store.get().ui.page).toBe(0)
+  })
+
+  it('{ get, swap } narrowing still works in the chain, in both modes', () => {
+    const store = createStore({ byId: new Map([['a', { n: 1 }], ['b', { n: 2 }]]), other: { k: 1 } })
+    const before = store.get()
+    const a = narrowStore(store, { get: (s) => s.byId.get('a')!, swap: (d, v) => void d.byId.set('a', v) })
+    a.set((t) => { t.n = 10 })
+    expect(store.get().byId.get('a')).toEqual({ n: 10 })
+    a.set({ n: 11 })
+    expect(store.get().byId.get('a')).toEqual({ n: 11 })
+    expect(store.get().byId.get('b')).toBe(before.byId.get('b'))
+    expect(store.get().other).toBe(before.other)
+  })
+
+  it('does not read the pages it is not writing to (the cost no longer grows with the size of the store)', () => {
+    let reads = 0
+    const spy = <O extends object>(o: O): O => new Proxy(o, { get: (t, k, r) => (reads++, Reflect.get(t, k, r)), ownKeys: (t) => (reads++, Reflect.ownKeys(t)) })
+    const base = doc(50, 20)
+    // The page written to comes first, so tracing the path stops there; everything after it is only ever read by something that scans the store.
+    const store = createStore({ ...base, work: { pages: base.work.pages.map((p, i) => (i === 0 ? p : spy(p))) } })
+    chain(store, 0, '0-3').item.set((it) => { it.x = 1 })
+    expect(store.get().work.pages[0]!.items[3]!.x).toBe(1)
+    expect(reads).toBe(0)
+  })
+})
