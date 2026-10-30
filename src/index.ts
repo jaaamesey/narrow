@@ -1,4 +1,6 @@
 export type { SetStore, Narrower } from './store.js'
+export type { ActionSet, BoundActions, NarrowedActions, NarrowLevel } from './actions.js'
+export { createTestStore, defineActions, withContext } from './actions.js'
 export {
   useNewStore,
   useNarrowedStore,

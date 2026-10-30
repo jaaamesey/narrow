@@ -37,7 +37,7 @@ const untraceable = (cause?: unknown) =>
   )
 
 // The path of keys narrowFn reads to reach the node it returns, or null if it returns nothing.
-function pathOf(state: object, narrowFn: (state: any) => unknown): PropertyKey[] | null {
+export function pathOf(state: object, narrowFn: (state: any) => unknown): PropertyKey[] | null {
   // Proxy a stand-in, not `v`: proxy invariants forbid wrapping frozen properties.
   const track = (v: unknown, path: PropertyKey[]): unknown => {
     if (v === null || typeof v !== 'object') return v
@@ -77,7 +77,7 @@ function pathOf(state: object, narrowFn: (state: any) => unknown): PropertyKey[]
   return path
 }
 
-const getAt = (v: any, path: PropertyKey[]) => path.reduce((o, k) => o[k], v)
+export const getAt = (v: any, path: PropertyKey[]) => path.reduce((o, k) => o[k], v)
 
 export function narrowSetter<T extends object, N extends object>(
   parentSet: SetStore<T>,
@@ -103,3 +103,4 @@ export function narrowSetter<T extends object, N extends object>(
     }, 'swap')
   return set as SetStore<N>
 }
+

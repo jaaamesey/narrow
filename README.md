@@ -2,7 +2,7 @@
 
 `useState` for nested data. Mutate it like a plain object, keep it as plain immutable React state, and hand any component just the slice it needs.
 
-No global store, no selectors, no actions. State is plain data that lives in your component tree and flows through props and context, so React and the React Compiler treat it like any other state. Writes go through [Mutative](https://github.com/unadlib/mutative), which turns your mutations into immutable updates.
+No global store, no selectors, no reducers. State is plain data that lives in your component tree and flows through props and context, so React and the React Compiler treat it like any other state. Writes go through [Mutative](https://github.com/unadlib/mutative), which turns your mutations into immutable updates.
 
 ```tsx
 // Before: rebuild every level by hand
@@ -74,6 +74,8 @@ function TodoRow({ todo, setTodo }: { todo: Todo; setTodo: SetStore<Todo> }) {
 
 `NarrowList` also takes a record or a `Map`, for normalized state. Those are keyed already, so there's no `getKey`. `children` gets each entry's key as a third argument.
 
+For a list whose items aren't written to on their own, leave out `setStore`: each item is still memoized, and `children` gets the item and its key.
+
 ## Share it through context
 
 ```tsx
@@ -93,6 +95,46 @@ const settingsStore = createNarrowedStoreContext(appStore, (s) => s.settings)
 
 <settingsStore.Provider>…</settingsStore.Provider>  // settingsStore.useVal() / useSet() inside
 ```
+
+## Actions
+
+For apps that want every change to go through named, typed, testable functions, any store can take an action set instead of a setter. Its actions are then the only way to write:
+
+```ts
+export const counterActionSet = defineActions({
+  add(s: Counter, n: number) {
+    s.count += n
+  },
+})
+
+const [counter, counterActions] = useNewStore({ count: 0 }, counterActionSet)
+counterActions.add(1)
+```
+
+Action sets narrow to other action sets, so each part of the state gets only its own actions, and called directly, every action is a pure function to test. See [Actions](docs/actions.md).
+
+## Testing
+
+Components take their part of the state and a setter as props, so they test with plain values. `createTestStore` is a store that lives outside React: `state` is always the latest value, and writes apply at once.
+
+```tsx
+const store = createTestStore(todo)
+render(<TodoRow todo={store.state} setTodo={store.set} />)
+fireEvent.click(screen.getByRole('checkbox'))
+expect(store.state.done).toBe(true)
+```
+
+Components don't re-render when it changes, so it's only for tests: to see the new state in the DOM, render again with `store.state`. A component that reads from context renders inside its Provider, with the state to start from:
+
+```tsx
+render(
+  <appStore.Provider initial={{ todos: [a, b] }}>
+    <TodoList />
+  </appStore.Provider>,
+)
+```
+
+For testing actions, see [Actions](docs/actions.md#testing).
 
 ## Why react-narrow?
 
@@ -163,5 +205,6 @@ const todoStore = createNarrowedStoreContext(appStore, (s, id: string) => s.todo
 
 - [`examples/slides`](examples/slides): a slide deck editor. Dragging a shape re-renders only that shape and its slide's thumbnail.
 - [`examples/todomvc`](examples/todomvc): TodoMVC.
+- [`examples/todomvc-actions`](examples/todomvc-actions): the same TodoMVC, with its updates written as actions.
 
-Both use the React Compiler and no `memo`. Run one with `npm install && npm run dev -w examples/slides`.
+All of them use the React Compiler and no `memo`. Run one with `npm install && npm run dev -w examples/slides`.
