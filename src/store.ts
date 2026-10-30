@@ -1,4 +1,4 @@
-import { create, type Draft } from 'mutative'
+import { create, isDraft, original, rawReturn, type Draft } from 'mutative'
 
 type Primitive = string | number | boolean | bigint | symbol | null | undefined
 
@@ -16,9 +16,19 @@ export interface SetStore<T extends object> {
 
 const modeOf = (next: unknown, mode?: 'mutate' | 'swap') => mode ?? (typeof next === 'function' ? 'mutate' : 'swap')
 
+// What a narrowed recipe hands back up the chain when the node it narrows to is the whole parent, which a draft can't be assigned over:
+// the root replaces its state with `value` instead. Never seen by user recipes.
+const REPLACE = Symbol('replace')
+type Replace = { [REPLACE]: true; value: unknown }
+const replacement = (value: unknown): Replace => ({ [REPLACE]: true, value })
+const isReplace = (r: unknown): r is Replace => typeof r === 'object' && r !== null && REPLACE in r
+
 export function applyUpdate<T>(prev: T, next: unknown, mode?: 'mutate' | 'swap'): T {
   if (modeOf(next, mode) === 'swap') return (typeof next === 'function' ? next(prev) : next) as T
-  return create(prev, (draft) => void (next as (d: Draft<T>) => unknown)(draft))
+  return create(prev as object, (draft) => {
+    const result = (next as (d: Draft<T>) => unknown)(draft as Draft<T>)
+    if (isReplace(result)) return rawReturn(result.value as object)
+  }) as T
 }
 
 /** A narrow function, or `{ get, swap }` when the function can't be traced. */
@@ -78,29 +88,47 @@ export function pathOf(state: object, narrowFn: (state: any) => unknown): Proper
 }
 
 export const getAt = (v: any, path: PropertyKey[]) => path.reduce((o, k) => o[k], v)
+const assignAt = (d: any, path: PropertyKey[], value: unknown) => void (getAt(d, path.slice(0, -1))[path.at(-1)!] = value)
+// The plain object under a draft (a store that isn't mutative's hands over plain objects, which are their own).
+const plainOf = (d: any) => (isDraft(d) ? original(d) : d)
 
+/**
+ * The setter for the part of a store `narrow` picks. An update goes up the chain of narrowed setters as one mutate recipe, so the root
+ * makes one `create` and every level only walks its own path down the draft. (Assigning each level's new subtree into its parent's draft
+ * instead would make mutative scan the whole of it, and so the whole store, for every write.)
+ */
 export function narrowSetter<T extends object, N extends object>(
   parentSet: SetStore<T>,
   narrow: Narrower<T, N>,
 ): SetStore<N> {
-  const set = (next: unknown, mode?: 'mutate' | 'swap') =>
-    parentSet((current: T) => {
+  const set = (next: unknown, mode?: 'mutate' | 'swap') => {
+    const swap = modeOf(next, mode) === 'swap'
+    const recipe = (d: any): unknown => {
       if (typeof narrow !== 'function') {
-        const node = narrow.get(current)
+        const node = narrow.get(plainOf(d))
         // Deliberately silent: late async writes to deleted items are normal (React dropped its similar warning).
-        if (node == null) return current
+        if (node == null) return
         const value = applyUpdate(node, next, mode)
-        return value === node ? current : create(current, (d) => void narrow.swap(d, value))
+        if (value !== node) narrow.swap(d, value)
+        return
       }
-      const path = pathOf(current, narrow)
-      if (!path) return current // see above
-      if (modeOf(next, mode) === 'mutate') return create(current, (d) => void (next as (d: unknown) => unknown)(getAt(d, path)))
-      const node = getAt(current, path)
-      const value = typeof next === 'function' ? next(node) : next
-      if (value === node) return current
-      if (!path.length) return value
-      return create(current, (d: any) => void (getAt(d, path.slice(0, -1))[path.at(-1)!] = value))
-    }, 'swap')
+      const path = pathOf(plainOf(d), narrow)
+      if (!path) return // see above
+      let value: unknown
+      if (swap) {
+        const node = getAt(plainOf(d), path)
+        value = typeof next === 'function' ? next(node) : next
+        if (value === node) return
+      } else {
+        const result = (next as (d: unknown) => unknown)(getAt(d, path))
+        if (!isReplace(result)) return
+        value = result.value
+      }
+      if (!path.length) return replacement(value)
+      assignAt(d, path, value)
+    }
+    ;(parentSet as (recipe: (d: any) => unknown, mode: 'mutate') => void)(recipe, 'mutate')
+  }
   return set as SetStore<N>
 }
 
