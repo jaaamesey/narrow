@@ -1,13 +1,4 @@
-import {
-  createContext,
-  memo,
-  useCallback,
-  type Key,
-  useContext,
-  useMemo,
-  useState,
-  type ReactNode,
-} from 'react'
+import { createContext, memo, useCallback, useContext, useMemo, useState, type Key, type ReactNode } from 'react'
 import type { Draft } from 'mutative'
 import {
   type ActionState,
@@ -35,6 +26,7 @@ export function useNewStore<L extends RootActions>(
 ): [ActionState<L>, BoundActions<L>]
 export function useNewStore(initial: any, actions?: RootActions): [any, any] {
   const [state, setState] = useState(initial)
+  // Made once, so the setter keeps its identity like useState's.
   const [set] = useState(() => ((next: unknown, mode?: 'mutate' | 'swap') => setState((prev: object) => applyUpdate(prev, next, mode))) as SetStore<object>)
   const bound = useMemo(() => actions && bindActions(set, actions as ActionTree<object, unknown, unknown>), [set, actions])
   return [state, bound ?? set]
@@ -53,29 +45,36 @@ export function useNarrowedStore<T extends object, B extends object, L extends o
   pick: (actions: B) => L,
   actions: B,
 ): [BoundState<L>, L]
-export function useNarrowedStore(store: object, narrow: any, setStoreOrActions: any): [any, any] {
+export function useNarrowedStore(store: object, narrowOrPick: any, setStoreOrActions: any): [any, any] {
+  // A setter is a function; bound actions are an object.
   const isActions = typeof setStoreOrActions !== 'function'
-  // The setter, or the picked level: either way, kept while the store and `narrow` are.
+  // The narrowed setter, or the picked level: either way, kept while its inputs are.
   const narrowed = useMemo(
-    () => (isActions ? narrow(setStoreOrActions) : narrowSetter(setStoreOrActions, narrow)),
-    [isActions, setStoreOrActions, narrow],
+    () => (isActions ? narrowOrPick(setStoreOrActions) : narrowSetter(setStoreOrActions, narrowOrPick)),
+    [isActions, setStoreOrActions, narrowOrPick],
   )
-  const value = isActions ? readLevel(setStoreOrActions, store, narrowed) : getterOf(narrow)(store)
+  const value = isActions ? readLevel(setStoreOrActions, store, narrowed) : getterOf(narrowOrPick)(store)
   if (value == null) throw new Error('react-narrow: the narrowed node is missing (narrow returned null/undefined)')
   return [value, narrowed]
 }
 
-type RenderItem<T extends object, K> = (item: T, setItem: SetStore<T>, key: K) => ReactNode
-
-type ArrayItems<T extends object, K> = { items: T[]; getKey: (item: T, index: number) => K }
-type KeyedItems<I> = { items: I; getKey?: undefined }
-type WithSetter<T extends object, K, I extends object> = { setStore: SetStore<I>; actions?: undefined; children: RenderItem<T, K> }
+// The three ways NarrowList renders an item, chosen by which of `setStore` and `actions` it's given.
+type WithSetter<T extends object, K, I extends object> = {
+  setStore: SetStore<I>
+  actions?: undefined
+  children: (item: T, setItem: SetStore<T>, key: K) => ReactNode
+}
 // `actions` picks an item's level from an action set by its key, like `appActions.todo`.
 type WithActions<T extends object, K, B> = {
   setStore?: undefined
   actions: (key: K) => B
-  children: (item: T, actions: B, key: K) => ReactNode
+  children: (item: T, itemActions: B, key: K) => ReactNode
 }
+// For a list whose items have no writes of their own: each item is only memoized.
+type ReadOnly<T extends object, K> = { setStore?: undefined; actions?: undefined; children: (item: T, key: K) => ReactNode }
+
+type ArrayItems<T extends object, K> = { items: T[]; getKey: (item: T, index: number) => K }
+type KeyedItems<I> = { items: I; getKey?: undefined }
 
 interface NarrowListComponent {
   <T extends object>(props: ArrayItems<T, Key> & WithSetter<T, Key, T[]>): ReactNode
@@ -89,27 +88,24 @@ interface NarrowListComponent {
   <K extends Key, T extends object>(props: KeyedItems<Map<K, T>> & ReadOnly<T, K>): ReactNode
 }
 
-// Neither: each item is only memoized, for a list whose items have no writes of their own.
-type ReadOnly<T extends object, K> = { setStore?: undefined; actions?: undefined; children: (item: T, key: K) => ReactNode }
-
-// What NarrowList calls `children` with: the item, then its setter or its level's actions, then its key.
-type AnyRender = (item: object, setItemOrActions: any, key: Key) => ReactNode
+type Items = object[] | Record<string, object> | Map<Key, object>
+type GetKey = (item: object, index: number) => Key
 
 /**
- * Renders every item of an array, record or Map with its own narrowed store; only changed items re-render.
- * For an action store, pass `actions` (a level that takes the item's key) instead of `setStore`, and each item
- * gets its level's actions. With neither, each item is only memoized: `children` gets the item and its key.
+ * Renders every item of an array, record or Map as its own memoized component, so only changed items re-render.
+ * With `setStore`, each item also gets a setter for itself. With `actions` (a level that takes the item's key), it
+ * gets that level's actions instead. With neither, `children` gets the item and its key.
  */
 function NarrowListImpl({ items, setStore, getKey, actions, children }: {
-  items: object[] | Record<string, object> | Map<Key, object>
+  items: Items
   setStore?: SetStore<any>
-  getKey?: (item: object, index: number) => Key
+  getKey?: GetKey
   actions?: (key: Key) => object
-  children: AnyRender
+  children: (...args: any[]) => ReactNode
 }) {
   // Its JSX is only in a callback, so the compiler doesn't infer that it's a component on its own.
   'use memo'
-  const kind = Array.isArray(items) ? 'array' : items instanceof Map ? 'map' : 'record'
+  const kind: ItemKind = Array.isArray(items) ? 'array' : items instanceof Map ? 'map' : 'record'
   const entries: [Key, object][] = Array.isArray(items)
     ? items.map((item, i) => [getKey!(item, i), item])
     : items instanceof Map
@@ -117,42 +113,54 @@ function NarrowListImpl({ items, setStore, getKey, actions, children }: {
       : Object.entries(items)
   return entries.map(([key, item]) =>
     setStore ? (
-      <NarrowListItem key={key} itemKey={key} item={item} kind={kind} setStore={setStore} getKey={getKey} render={children} />
+      <SetterListItem key={key} itemKey={key} item={item} kind={kind} setStore={setStore} getKey={getKey} render={children} />
+    ) : actions ? (
+      <ActionListItem key={key} itemKey={key} item={item} actions={actions} render={children} />
     ) : (
-      <MemoListItem key={key} itemKey={key} item={item} level={actions} render={children} />
+      <ReadOnlyListItem key={key} itemKey={key} item={item} render={children} />
     ),
   )
 }
 
 export const NarrowList = memo(NarrowListImpl) as NarrowListComponent
 
-type ItemKind = 'array' | 'record' | 'map'
+type ItemKind = 'array' | 'map' | 'record'
 
-const narrowToItem = (kind: ItemKind, key: Key, getKey?: (item: object, index: number) => Key): Narrower<any, object> =>
-  kind === 'array'
-    ? (items: object[]) => items.find((x, i) => getKey!(x, i) === key)
-    : kind === 'map'
-      ? { get: (m: Map<Key, object>) => m.get(key), swap: (d, v) => void d.set(key, v) }
-      : (r: Record<string, object>) => r[String(key)]
+// How to find the item with `key` in the list.
+function narrowToItem(kind: ItemKind, key: Key, getKey?: GetKey): Narrower<any, object> {
+  if (kind === 'array') return (items: object[]) => items.find((item, i) => getKey!(item, i) === key)
+  if (kind === 'map') return { get: (m: Map<Key, object>) => m.get(key), swap: (d, v) => void d.set(key, v) }
+  return (r: Record<string, object>) => r[String(key)]
+}
 
-const NarrowListItem = memo(function NarrowListItem(props: {
+const SetterListItem = memo(function SetterListItem(props: {
   itemKey: Key
   item: object
   kind: ItemKind
   setStore: SetStore<any>
-  getKey?: (item: object, index: number) => Key
-  render: AnyRender
+  getKey?: GetKey
+  render: (item: object, setItem: SetStore<any>, key: Key) => ReactNode
 }) {
   const { itemKey, item, kind, setStore, getKey, render } = props
+  // Kept while these are, so a row given the setter can skip re-rendering.
   const setItem = useMemo(() => narrowSetter(setStore, narrowToItem(kind, itemKey, getKey)), [setStore, kind, getKey, itemKey])
   return render(item, setItem, itemKey)
 })
 
-// Like NarrowListItem's setter, the item's actions are memoized here, so they keep their identity across renders.
-const MemoListItem = memo(function MemoListItem(props: { itemKey: Key; item: object; level?: (key: Key) => object; render: AnyRender }) {
-  const { item, level, itemKey, render } = props
-  const actions = useMemo(() => level?.(itemKey), [level, itemKey])
-  return actions ? render(item, actions, itemKey) : (render as unknown as (item: object, key: Key) => ReactNode)(item, itemKey)
+const ActionListItem = memo(function ActionListItem(props: {
+  itemKey: Key
+  item: object
+  actions: (key: Key) => object
+  render: (item: object, itemActions: object, key: Key) => ReactNode
+}) {
+  const { itemKey, item, actions, render } = props
+  // Kept while the level and key are, like SetterListItem's setter.
+  const itemActions = useMemo(() => actions(itemKey), [actions, itemKey])
+  return render(item, itemActions, itemKey)
+})
+
+const ReadOnlyListItem = memo(function ReadOnlyListItem(props: { itemKey: Key; item: object; render: (item: object, key: Key) => ReactNode }) {
+  return props.render(props.item, props.itemKey)
 })
 
 /** A store shared through context: `useVal()` re-renders on changes, `useSet()` never does. */
@@ -169,13 +177,14 @@ export interface StoreContext<T extends object> extends ContextStore<T> {
   Provider(props: ProviderProps<T>): ReactNode
 }
 
+// What a context holds with no Provider above it.
 const NONE = Symbol('no provider')
 
 const readOnlyDefault = (() => {
   throw new Error('react-narrow: no store in context; the default value is read-only')
 }) as SetStore<any>
 
-// Separate value and setter contexts, so setter-only consumers don't re-render.
+// The value and the setter go in separate contexts, so components that only write don't re-render.
 function makeContext<T extends object>(fallback?: T) {
   const ValueCtx = createContext<T | typeof NONE>(NONE)
   const SetCtx = createContext<SetStore<T> | typeof NONE>(NONE)
@@ -214,6 +223,7 @@ export function createContextStore<T extends object>(fallbackOrActions?: T): unk
   if (isActionSet(fallbackOrActions)) return createActionContext(fallbackOrActions as unknown as RootActions)
   const fallback = fallbackOrActions
   const { def, Provide } = makeContext<T>(fallback)
+  // Its own component, so useNewStore only runs when the Provider owns the store.
   function Owned(p: { initial: T | (() => T); children?: ReactNode }) {
     const [value, set] = useNewStore(p.initial)
     return <Provide value={value} set={set}>{p.children}</Provide>
@@ -253,6 +263,7 @@ export function createNarrowedStoreContext<T extends object, N extends object, A
   const { def, Provide } = makeContext<N>(fallback)
   function Provider(props: { children?: ReactNode; narrowArg?: A }) {
     const arg = props.narrowArg as A
+    // `narrow` with the argument filled in, kept while it is.
     const narrowed = useMemo<Narrower<T, N>>(
       () =>
         typeof narrow === 'function'
@@ -281,16 +292,17 @@ export interface ActionStoreContext<T, B> extends ActionContextStore<T, B> {
   Provider(props: ActionProviderProps<T, B>): ReactNode
 }
 
+// Like makeContext, with the bound actions in place of the setter. There's no fallback: actions need a store.
 function makeActionContext<T, B>() {
   const ValueCtx = createContext<T | typeof NONE>(NONE)
   const ActionsCtx = createContext<B | typeof NONE>(NONE)
-  const read = <V,>(v: V | typeof NONE) => {
+  const provided = <V,>(v: V | typeof NONE) => {
     if (v === NONE) throw new Error('react-narrow: no action store found in context')
     return v
   }
   const def: ActionContextStore<T, B> = {
-    useVal: () => read(useContext(ValueCtx)),
-    useActions: () => read(useContext(ActionsCtx)),
+    useVal: () => provided(useContext(ValueCtx)),
+    useActions: () => provided(useContext(ActionsCtx)),
   }
   const Provide = (p: { value: T; actions: B; children?: ReactNode }) => (
     <ValueCtx value={p.value}>
@@ -302,6 +314,7 @@ function makeActionContext<T, B>() {
 
 function createActionContext<L extends RootActions>(actions: L): ActionStoreContext<ActionState<L>, BoundActions<L>> {
   const { def, Provide } = makeActionContext<ActionState<L>, BoundActions<L>>()
+  // Its own component, so useNewStore only runs when the Provider owns the store.
   function Owned(p: { initial: ActionState<L> | (() => ActionState<L>); children?: ReactNode }) {
     const [value, bound] = useNewStore(p.initial, actions)
     return <Provide value={value} actions={bound}>{p.children}</Provide>
@@ -321,8 +334,9 @@ function narrowActionContext<T, B extends object, N extends object, A>(
   const { def, Provide } = makeActionContext<BoundState<N>, N>()
   function Provider(props: { children?: ReactNode; narrowArg?: A }) {
     const arg = props.narrowArg as A
-    const pickHere = useCallback((actions: B) => pick(actions, arg), [arg])
-    const [value, level] = useNarrowedStore(useVal() as object, pickHere, useActions())
+    // `pick` with the argument filled in, kept while it is.
+    const pickWithArg = useCallback((actions: B) => pick(actions, arg), [arg])
+    const [value, level] = useNarrowedStore(useVal() as object, pickWithArg, useActions())
     return <Provide value={value} actions={level}>{props.children}</Provide>
   }
   return { ...def, Provider }

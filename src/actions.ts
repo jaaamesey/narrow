@@ -1,5 +1,5 @@
 import { create, isDraft, type Draft } from 'mutative'
-import { applyUpdate, getAt, pathOf, type SetStore } from './store.js'
+import { getAt, pathOf, type SetStore } from './store.js'
 
 /** Functions that take the state first, then mutate it or return a replacement for it. */
 export type Actions<T> = Record<string, (state: Draft<T>, ...args: any[]) => T | void>
@@ -21,8 +21,7 @@ declare const TYPES: unique symbol
 declare const ARG: unique symbol
 declare const STATE: unique symbol
 
-type Provider = (parent: any, arg: unknown, context: unknown) => unknown
-
+// What an action set is at runtime: its actions, and the levels narrowed from its state.
 interface LevelDef {
   actions: Actions<any>
   // Built on first use, so a set can contain itself, for recursive data like an outline.
@@ -30,10 +29,12 @@ interface LevelDef {
   // The context of a set used as the root (see withContext).
   context?: unknown
 }
+// A narrowed level: a set, and how to get to its state from the parent's.
 interface ChildDef extends LevelDef {
   narrow: LevelNarrower<any, unknown, object>
+  // Whether `narrow` takes an argument, so the bound level is a function of it.
   hasArg: boolean
-  provide?: Provider
+  provideContext?: ContextProvider<any, unknown, unknown, unknown>
 }
 
 /** What every action set is: its state `T`, its actions `A`, its narrowed levels `C`, and the context `X` it needs. */
@@ -114,83 +115,83 @@ export type RootActions = ActionTree<any, unknown, unknown, unknown>
 
 const isObject = (v: unknown): v is object => v !== null && typeof v === 'object'
 
-const narrow = ((get: LevelNarrower<any, unknown, object>, set: ActionTree<unknown, unknown, unknown>, provide?: Provider) =>
-  child(get, set[TREE], provide)) as NarrowLevel<any>
+// The `narrow` that a set's `children` callback is given.
+const narrowLevel = ((narrow: LevelNarrower<any, unknown, object>, set: ActionTree<unknown, unknown, unknown>, provideContext?: ChildDef['provideContext']) => {
+  // A narrow function that declares a second parameter takes an argument (so give it no default value).
+  const hasArg = (typeof narrow === 'function' ? narrow : narrow.get).length >= 2
+  // A narrowed level gets its context from `provideContext`, never from withContext.
+  const { context: _, ...def } = set[TREE]
+  const child: ChildDef = { ...def, narrow, hasArg, provideContext }
+  return { [TREE]: child }
+}) as NarrowLevel<any>
 
 function levelDef(actions: Actions<any>, children?: (narrow: NarrowLevel<any>) => Record<string, NarrowedActions<any, any, any, any>>): LevelDef {
-  let defs: Record<string, ChildDef> | undefined
+  let childDefs: Record<string, ChildDef> | undefined
   return {
     actions,
     children: () => {
-      if (defs) return defs
-      defs = {}
-      for (const [name, level] of Object.entries(children?.(narrow) ?? {})) {
+      if (childDefs) return childDefs
+      childDefs = {}
+      for (const [name, level] of Object.entries(children?.(narrowLevel) ?? {})) {
         if (Object.hasOwn(actions, name)) throw new Error(`react-narrow: "${name}" is both an action and a narrowed level`)
-        defs[name] = level[TREE] as ChildDef
+        childDefs[name] = level[TREE] as ChildDef
       }
-      return defs
+      return childDefs
     },
   }
 }
 
-function child(get: LevelNarrower<any, unknown, object>, def: LevelDef, provide?: Provider) {
-  // A narrow function that declares a second parameter takes an argument (so give it no default value).
-  const hasArg = (typeof get === 'function' ? get : get.get).length >= 2
-  const { context: _, ...rest } = def
-  return { [TREE]: { ...rest, narrow: get, hasArg, provide } } as unknown as NarrowedActions<any, any, any, any>
-}
-
-// One level down the chain from a set's root to where an action runs.
+// One step down from a set's root towards the level where an action runs.
 interface Step {
   child: ChildDef
   arg: unknown
 }
 
-const getNode = (n: LevelNarrower<any, unknown, object>, parent: unknown, arg: unknown) => (typeof n === 'function' ? n(parent, arg) : n.get(parent, arg))
+const narrowTo = ({ child, arg }: Step, parent: unknown) => (typeof child.narrow === 'function' ? child.narrow(parent, arg) : child.narrow.get(parent, arg))
+
+// Puts `value` where `step` narrows to in `parent`, a draft.
+function replaceAt({ child, arg }: Step, parent: object, value: object) {
+  const n = child.narrow
+  if (typeof n !== 'function') return n.swap(parent as Draft<object>, value, arg)
+  const path = pathOf(parent, (p) => n(p, arg))!
+  getAt(parent, path.slice(0, -1))[path.at(-1)!] = value
+}
 
 /**
  * Runs `action` on `root`, a draft, at the end of `steps`: each level is found in its parent's draft, and gets its
  * context from it, so an action can also write to the levels above it in the same update. Returns a replacement for
  * the root, if the action replaced the root itself.
  */
-function runAt(root: unknown, steps: Step[], context: unknown, action: Actions<any>[string], args: unknown[]): unknown {
-  let node = root
+function runAt(root: object, steps: Step[], context: unknown, action: Actions<any>[string], args: unknown[]): object | undefined {
+  let node: unknown = root
   let parent: unknown
-  for (const { child, arg } of steps) {
+  for (const step of steps) {
     parent = node
-    node = getNode(child.narrow, parent, arg)
+    node = narrowTo(step, parent)
     // Deliberately silent, like a narrowed setter: late writes to deleted items are normal.
     if (node == null) return undefined
-    if (child.provide) context = child.provide(parent, arg, context)
+    if (step.child.provideContext) context = step.child.provideContext(parent, step.arg, context)
   }
   const result = (action as (this: unknown, ...a: unknown[]) => unknown).call(context, node, ...args)
   // Primitives are ignored like in setter recipes, so `s => s.count++` doesn't replace the state.
   if (!isObject(result) || result === node) return undefined
   if (!steps.length) return result
-  const { child, arg } = steps.at(-1)!
-  const n = child.narrow
-  if (typeof n !== 'function') n.swap(parent as Draft<object>, result, arg)
-  else {
-    const path = pathOf(parent as object, (p) => n(p, arg))!
-    getAt(parent, path.slice(0, -1))[path.at(-1)!] = result
-  }
+  replaceAt(steps.at(-1)!, parent as object, result)
   return undefined
 }
 
-
-// On each bound level: its parent level, and the narrowing that leads to it from there (see readLevel).
+// On each bound level below the root: the level it was narrowed from, and the step from there (see readLevel).
 const LEVEL = Symbol('react-narrow level')
-interface LevelInfo {
+interface LevelInfo extends Step {
   parent: object
-  child: ChildDef
-  arg: unknown
 }
 const infoOf = (level: object) => (level as { [LEVEL]?: LevelInfo })[LEVEL]
 
+// The bound actions for `def`, at the end of `steps` from the store's root.
 function bindLevel(set: SetStore<any>, def: LevelDef, steps: Step[] = []): Record<string, unknown> {
   const bound: Record<string, unknown> = {}
   for (const [key, action] of Object.entries(def.actions)) {
-    // 'swap', so a narrowed setter hands over its node instead of a draft.
+    // As a swap that makes its own draft, so that an action that replaces the root can return the replacement.
     bound[key] = (...args: unknown[]) =>
       set((state) => create(state, (draft) => runAt(draft, steps, def.context, action, args) as never), 'swap')
   }
@@ -201,25 +202,27 @@ function bindLevel(set: SetStore<any>, def: LevelDef, steps: Step[] = []): Recor
       Object.defineProperty(level, LEVEL, { value: { parent: bound, child, arg } satisfies LevelInfo })
       return level
     }
-    let only: Record<string, unknown> | undefined
-    // Without an argument, bound on first access (so recursive levels don't bind forever), then kept.
     if (child.hasArg) bound[name] = levelFor
-    else Object.defineProperty(bound, name, { get: () => (only ??= levelFor(undefined)), enumerable: true })
+    else {
+      // Without an argument, it's a property, bound on first read (so a recursive set doesn't bind forever).
+      let level: Record<string, unknown> | undefined
+      Object.defineProperty(bound, name, { get: () => (level ??= levelFor(undefined)), enumerable: true })
+    }
   }
   return bound
 }
 
-// A set: its definition, and its own actions as functions of its state. Pure on plain values, and in place on a
-// draft, so that one action can call another.
-function makeSet(def: LevelDef) {
-  const set: Record<string | symbol, unknown> = { [TREE]: def }
+// An action set: its definition, and its own actions as functions of its state. Each is pure on a plain value,
+// and changes a draft in place, so that one action can call another.
+function actionSetOf(def: LevelDef) {
+  const actionSet: Record<string | symbol, unknown> = { [TREE]: def }
   for (const [key, action] of Object.entries(def.actions)) {
-    set[key] = (state: object, ...args: unknown[]) => {
+    actionSet[key] = (state: object, ...args: unknown[]) => {
       if (!isDraft(state)) return create(state, (draft) => runAt(draft, [], def.context, action, args) as never)
       return runAt(state, [], def.context, action, args) ?? state
     }
   }
-  return set
+  return actionSet
 }
 
 /**
@@ -256,13 +259,13 @@ export function defineActions<T>(): <A extends AnyActions<A> = {}, C = {}>(
   children?: (narrow: NarrowLevel<T, ContextOf<A>>) => C,
 ) => ActionSet<T, A, C, ContextOf<A>>
 export function defineActions(actions?: Actions<any>, children?: any): unknown {
-  if (!actions) return (actions: Actions<any>, children?: any) => makeSet(levelDef(actions, children))
-  return makeSet(levelDef(actions, children))
+  if (!actions) return (actions: Actions<any>, children?: any) => actionSetOf(levelDef(actions, children))
+  return actionSetOf(levelDef(actions, children))
 }
 
 /** A set that needs a context, given one, so it can be called directly (in tests) or be a store's root. */
 export function withContext<T, A, C, X>(set: ActionTree<T, A, C, X>, context: X): ActionSet<T, A, C> {
-  return makeSet({ ...set[TREE], context }) as unknown as ActionSet<T, A, C>
+  return actionSetOf({ ...set[TREE], context }) as unknown as ActionSet<T, A, C>
 }
 
 /** Binds an action set to a setter, which can be any store's. */
@@ -272,36 +275,16 @@ export function bindActions<T extends object, L extends ActionTree<T, unknown, u
 
 export const isActionSet = (a: unknown): a is ActionTree<unknown, unknown, unknown> => typeof a === 'object' && a !== null && TREE in a
 
-/**
- * A store outside React, for tests: `state` is always the latest value, and writes apply at once. Like
- * `useNewStore`, it has a setter (`set`), or with an action set, `actions` bound to it instead. Components don't
- * re-render when it changes, so it isn't a way to share state.
- */
-export function createTestStore<T extends object>(initial: T | (() => T)): { readonly state: T; set: SetStore<T> }
-export function createTestStore<L extends RootActions>(
-  initial: NoInfer<ActionState<L>> | (() => NoInfer<ActionState<L>>),
-  actions: L,
-): { readonly state: ActionState<L>; actions: BoundActions<L> }
-export function createTestStore(initial: any, actions?: RootActions): { readonly state: any; set?: SetStore<any>; actions?: unknown } {
-  let state = typeof initial === 'function' ? initial() : initial
-  const set = ((next: unknown, mode?: 'mutate' | 'swap') => void (state = applyUpdate(state, next, mode))) as SetStore<object>
-  const read = {
-    get state() {
-      return state
-    },
-  }
-  return actions ? Object.assign(read, { actions: bindActions(set, actions as ActionTree<object, unknown, unknown>) }) : Object.assign(read, { set })
-}
-
 /** Reads the value of `level` from the value of `top`, a bound level above it. */
 export function readLevel(top: object, topValue: unknown, level: object): unknown {
-  const path: LevelInfo[] = []
+  // The steps from `top` down to `level`, found by walking up from `level`.
+  const steps: Step[] = []
   for (let l = level; l !== top; ) {
     const info = infoOf(l)
     if (!info) throw new Error('react-narrow: the picked actions are not a level below the given actions')
-    path.unshift(info)
+    steps.unshift(info)
     l = info.parent
   }
-  return path.reduce<unknown>((v, { child, arg }) => (v == null ? v : getNode(child.narrow, v, arg)), topValue)
+  return steps.reduce<unknown>((v, step) => (v == null ? v : narrowTo(step, v)), topValue)
 }
 
