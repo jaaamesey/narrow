@@ -2,7 +2,7 @@
 
 `useState` for nested data. Mutate it like a plain object, keep it as plain immutable React state, and hand any component just the slice it needs.
 
-No global store, no selectors, no actions. State is plain data that lives in your component tree and flows through props and context, so React and the React Compiler treat it like any other state. Writes go through [Mutative](https://github.com/unadlib/mutative), which turns your mutations into immutable updates.
+No global store, no selectors, no reducers. State is plain data that lives in your component tree and flows through props and context, so React and the React Compiler treat it like any other state. Writes go through [Mutative](https://github.com/unadlib/mutative), which turns your mutations into immutable updates.
 
 ```tsx
 // Before: rebuild every level by hand
@@ -18,6 +18,8 @@ setState((s) => { s.projects[pi].tasks[ti].done = true })
 ```
 
 > **Warning:** `react-narrow` is still a 0.x release, so the API may change. Found a bug, or a case it doesn't handle? Please [open an issue](https://github.com/jaaamesey/narrow/issues).
+
+Needs React 19, and TypeScript 5.5 or later if you use TypeScript.
 
 ## First, create a store
 
@@ -94,6 +96,46 @@ const settingsStore = createNarrowedStoreContext(appStore, (s) => s.settings)
 <settingsStore.Provider>…</settingsStore.Provider>  // settingsStore.useVal() / useSet() inside
 ```
 
+## Actions
+
+For apps that want every change to go through named, typed, testable functions, any store can take an action set instead of a setter. Its actions are then the only way to write:
+
+```ts
+export const counterActionSet = defineActions({
+  add(s: Counter, n: number) {
+    s.count += n
+  },
+})
+
+const [counter, counterActions] = useNewStore({ count: 0 }, counterActionSet)
+counterActions.add(1)
+```
+
+Action sets narrow to other action sets, so each part of the state gets only its own actions, and called directly, every action is a pure function to test. See [Actions](docs/actions.md).
+
+## Testing
+
+Components take their part of the state and a setter as props, so they test with plain values. `createTestStore` is a store that lives outside React: `state` is always the latest value, and writes apply at once.
+
+```tsx
+const store = createTestStore(todo)
+render(<TodoRow todo={store.state} setTodo={store.set} />)
+fireEvent.click(screen.getByRole('checkbox'))
+expect(store.state.done).toBe(true)
+```
+
+Components don't re-render when it changes, so it's only for tests: to see the new state in the DOM, render again with `store.state`. A component that reads from context renders inside its Provider, with the state to start from:
+
+```tsx
+render(
+  <appStore.Provider initial={{ todos: [a, b] }}>
+    <TodoList />
+  </appStore.Provider>,
+)
+```
+
+For testing actions, see [Actions](docs/actions.md#testing).
+
 ## Why react-narrow?
 
 ### What it's particularly useful for
@@ -128,6 +170,48 @@ const settingsStore = createNarrowedStoreContext(appStore, (s) => s.settings)
 - Components take a slice and a setter as props, so they work with any store and test with plain values, instead of being wired to one global store by path
 
 
+## JSON patches
+
+Give a store `onPatches`, and it gets [Mutative's JSON patches](https://github.com/unadlib/mutative#apply) for each update, with the patches that undo it. Paths are arrays of keys from the store's root, whichever narrowed setter or action made the change, and only what changed is in them.
+
+```tsx
+const [state, setState] = useNewStore(initial, {
+  onPatches(patches, inversePatches, { applied }) {
+    if (!applied) socket.send(JSON.stringify(patches))
+  },
+})
+
+<appStore.Provider initial={…} onPatches={…}>      // a context store that owns its store
+createTestStore(initial, { onPatches })             // and in tests
+useNewStore(initial, appActionSet, { onPatches })   // action stores take it after the set
+```
+
+It's called once per update that changes the state, after React commits it (so not twice in Strict Mode). An update that replaces the whole state (a swap at the root) is one `replace` at path `[]`. A Map entry narrowed with `{ get, swap }` is replaced as a whole.
+
+`applyPatches` writes patches to a store, given its root setter or root actions. Its updates come to `onPatches` with `applied: true`, so you can tell them from the user's own edits (and not echo them back to a server, or record them as a new undo step):
+
+```ts
+import { applyPatches } from 'react-narrow'
+
+socket.onmessage = (e) => applyPatches(appActions, JSON.parse(e.data))
+```
+
+Patches are plain data, so a server or another copy of Mutative (or any JSON patch library that takes array paths) can apply them too.
+
+## Reading the pre-edit value in a recipe
+
+`original` and `current` are re-exported from Mutative, so you don't need to depend on it yourself. Inside a mutating function, `original(draft)` is the value from before the edit and `current(draft)` is a snapshot of the draft so far. They only work on drafts from the same copy of Mutative that `react-narrow` uses, which is why they come from here.
+
+```ts
+import { original } from 'react-narrow'
+
+// Only apply this write if the slice hasn't been replaced since `basis` was read
+setSlice((s) => {
+  if (original(s) !== basis) return
+  s.title = result
+})
+```
+
 ## Narrowing to an item picked at runtime
 
 Give the narrow function a second parameter, and pass it to the Provider:
@@ -144,10 +228,12 @@ const todoStore = createNarrowedStoreContext(appStore, (s, id: string) => s.todo
 - Index keys (`getKey={(_, i) => i}`) need the full array as `items`. With a filtered list, the indexes point at the wrong items.
 - Reading narrowed data that no longer exists throws. Writing to it does nothing, so late async callbacks are safe.
 - Following Mutative, plain objects, arrays, Maps and Sets can be mutated. Dates and class instances are replaced, not mutated.
+- A setter you write yourself (to pass as a Provider's `setStore`, say) should hand each call on to a store's setter with both of its arguments: narrowed setters and actions write through it with recipes of their own.
 
 ## Examples
 
 - [`examples/slides`](examples/slides): a slide deck editor. Dragging a shape re-renders only that shape and its slide's thumbnail.
 - [`examples/todomvc`](examples/todomvc): TodoMVC.
+- [`examples/todomvc-actions`](examples/todomvc-actions): the same TodoMVC, with its updates written as actions.
 
-Both use the React Compiler and no `memo`. Run one with `npm install && npm run dev -w examples/slides`.
+All of them use the React Compiler and no `memo`. Run one with `npm install && npm run dev -w examples/slides`.

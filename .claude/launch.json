@@ -12,6 +12,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--workspace", "examples/slides", "--", "--port", "5174", "--strictPort"],
       "port": 5174
+    },
+    {
+      "name": "todomvc-actions",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--workspace", "examples/todomvc-actions", "--", "--port", "5175", "--strictPort"],
+      "port": 5175
     }
   ]
 }
