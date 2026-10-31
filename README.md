@@ -172,6 +172,34 @@ For testing actions, see [Actions](docs/actions.md#testing).
 - Components take a slice and a setter as props, so they work with any store and test with plain values, instead of being wired to one global store by path
 
 
+## JSON patches
+
+Give a store `onPatches`, and it gets [Mutative's JSON patches](https://github.com/unadlib/mutative#apply) for each update, with the patches that undo it. Paths are arrays of keys from the store's root, whichever narrowed setter or action made the change, and only what changed is in them.
+
+```tsx
+const [state, setState] = useNewStore(initial, {
+  onPatches(patches, inversePatches, { applied }) {
+    if (!applied) socket.send(JSON.stringify(patches))
+  },
+})
+
+<appStore.Provider initial={…} onPatches={…}>      // a context store that owns its store
+createTestStore(initial, { onPatches })             // and in tests
+useNewStore(initial, appActionSet, { onPatches })   // action stores take it after the set
+```
+
+It's called once per update that changes the state, after React commits it (so not twice in Strict Mode). An update that replaces the whole state (a swap at the root) is one `replace` at path `[]`. A Map entry narrowed with `{ get, swap }` is replaced as a whole.
+
+`applyPatches` writes patches to a store, given its root setter or root actions. Its updates come to `onPatches` with `applied: true`, so you can tell them from the user's own edits (and not echo them back to a server, or record them as a new undo step):
+
+```ts
+import { applyPatches } from 'react-narrow'
+
+socket.onmessage = (e) => applyPatches(appActions, JSON.parse(e.data))
+```
+
+Patches are plain data, so a server or another copy of Mutative (or any JSON patch library that takes array paths) can apply them too.
+
 ## Reading the pre-edit value in a recipe
 
 `original` and `current` are re-exported from Mutative, so you don't need to depend on it yourself. Inside a mutating function, `original(draft)` is the value from before the edit and `current(draft)` is a snapshot of the draft so far. They only work on drafts from the same copy of Mutative that `react-narrow` uses, which is why they come from here.
@@ -202,6 +230,7 @@ const todoStore = createNarrowedStoreContext(appStore, (s, id: string) => s.todo
 - Index keys (`getKey={(_, i) => i}`) need the full array as `items`. With a filtered list, the indexes point at the wrong items.
 - Reading narrowed data that no longer exists throws. Writing to it does nothing, so late async callbacks are safe.
 - Following Mutative, plain objects, arrays, Maps and Sets can be mutated. Dates and class instances are replaced, not mutated.
+- A setter you write yourself (to pass as a Provider's `setStore`, say) should hand each call on to a store's setter with both of its arguments: narrowed setters and actions write through it with recipes of their own.
 
 ## Examples
 

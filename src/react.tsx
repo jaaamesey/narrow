@@ -1,4 +1,4 @@
-import { createContext, memo, useCallback, useContext, useMemo, useState, type Key, type ReactNode } from 'react'
+import { createContext, memo, useCallback, useContext, useLayoutEffect, useMemo, useState, type Key, type ReactNode } from 'react'
 import type { Draft } from 'mutative'
 import {
   type ActionState,
@@ -11,25 +11,72 @@ import {
   readLevel,
   type RootActions,
 } from './actions.js'
-import { applyUpdate, getterOf, narrowSetter, type Narrower, type SetStore } from './store.js'
+import { type Change, type OnPatches, rootSetter, type StoreOptions } from './patches.js'
+import { getterOf, narrowSetter, type Narrower, type SetStore } from './store.js'
 
 /**
  * Like `useState`, but a function passed to the setter mutates a draft.
  *
  * With an action set from `defineActions`, returns the set's actions bound to the store instead of a setter, so
  * they're the only way to write. The state type then comes from the set, and `initial` is checked against it.
+ *
+ * `options.onPatches` gets the JSON patches for each update, after it's committed.
  */
-export function useNewStore<T extends object>(initial: T | (() => T)): [T, SetStore<T>]
+export function useNewStore<T extends object>(initial: T | (() => T), options?: StoreOptions): [T, SetStore<T>]
 export function useNewStore<L extends RootActions>(
   initial: NoInfer<ActionState<L>> | (() => NoInfer<ActionState<L>>),
   actions: L,
+  options?: StoreOptions,
 ): [ActionState<L>, BoundActions<L>]
-export function useNewStore(initial: any, actions?: RootActions): [any, any] {
-  const [state, setState] = useState(initial)
-  // Made once, so the setter keeps its identity like useState's.
-  const [set] = useState(() => ((next: unknown, mode?: 'mutate' | 'swap') => setState((prev: object) => applyUpdate(prev, next, mode))) as SetStore<object>)
+export function useNewStore(initial: any, actionsOrOptions?: RootActions | StoreOptions, options?: StoreOptions): [any, any] {
+  const actions = isActionSet(actionsOrOptions) ? (actionsOrOptions as RootActions) : undefined
+  const { onPatches } = (actions ? options : (actionsOrOptions as StoreOptions | undefined)) ?? {}
+  const [state, set] = useRootStore(initial, onPatches)
   const bound = useMemo(() => actions && bindActions(set, actions as ActionTree<object, unknown, unknown>), [set, actions])
   return [state, bound ?? set]
+}
+
+function useRootStore(initial: object | (() => object), onPatches?: OnPatches): [object, SetStore<object>] {
+  const [state, setState] = useState(initial)
+  // Made once, so the setter keeps its identity like useState's.
+  const [root] = useState(() => patchLog(setState, state))
+  useLayoutEffect(() => root.listen(onPatches), [root, onPatches])
+  useLayoutEffect(() => root.committed(state), [root, state])
+  return [state, root.set]
+}
+
+/**
+ * A root setter that, while something listens, keeps each update's change until its commit. An update can run more
+ * than once (in Strict Mode, or when React rebases it), so a commit reports only the changes that lead to the state
+ * it committed.
+ */
+function patchLog(setState: (fn: (prev: object) => object) => void, initial: object) {
+  let listener: OnPatches | undefined
+  let last = initial
+  const changes = new Map<object, Change>() // by the state each made
+  const set = rootSetter(setState, () => listener && ((change) => void changes.set(change.next, change)))
+  return {
+    set,
+    listen(onPatches: OnPatches | undefined) {
+      listener = onPatches
+    },
+    committed(state: object) {
+      const done: Change[] = []
+      for (let s = state; s !== last; ) {
+        const change = changes.get(s)
+        // Made before there was a listener, so there's nothing to report.
+        if (!change) {
+          done.length = 0
+          break
+        }
+        done.unshift(change)
+        s = change.prev
+      }
+      last = state
+      changes.clear()
+      for (const c of done) listener?.(c.patches, c.inversePatches, { applied: c.applied })
+    },
+  }
 }
 
 /**
@@ -170,8 +217,8 @@ export interface ContextStore<T extends object> {
 }
 
 type ProviderProps<T extends object> =
-  | { store: T; setStore: SetStore<T>; initial?: never; children?: ReactNode }
-  | { initial: T | (() => T); store?: never; setStore?: never; children?: ReactNode }
+  | { store: T; setStore: SetStore<T>; initial?: never; onPatches?: never; children?: ReactNode }
+  | { initial: T | (() => T); onPatches?: OnPatches; store?: never; setStore?: never; children?: ReactNode }
 
 export interface StoreContext<T extends object> extends ContextStore<T> {
   Provider(props: ProviderProps<T>): ReactNode
@@ -224,12 +271,12 @@ export function createContextStore<T extends object>(fallbackOrActions?: T): unk
   const fallback = fallbackOrActions
   const { def, Provide } = makeContext<T>(fallback)
   // Its own component, so useNewStore only runs when the Provider owns the store.
-  function Owned(p: { initial: T | (() => T); children?: ReactNode }) {
-    const [value, set] = useNewStore(p.initial)
+  function Owned(p: { initial: T | (() => T); onPatches?: OnPatches; children?: ReactNode }) {
+    const [value, set] = useNewStore(p.initial, { onPatches: p.onPatches })
     return <Provide value={value} set={set}>{p.children}</Provide>
   }
-  function Provider({ store, setStore, initial, children }: ProviderProps<T>) {
-    if (initial !== undefined) return <Owned initial={initial}>{children}</Owned>
+  function Provider({ store, setStore, initial, onPatches, children }: ProviderProps<T>) {
+    if (initial !== undefined) return <Owned initial={initial} onPatches={onPatches}>{children}</Owned>
     return <Provide value={store!} set={setStore!}>{children}</Provide>
   }
   return { ...def, Provider }
@@ -284,11 +331,11 @@ export interface ActionContextStore<T, B> {
 }
 
 type ActionProviderProps<T, B> =
-  | { store: T; actions: B; initial?: never; children?: ReactNode }
-  | { initial: T | (() => T); store?: never; actions?: never; children?: ReactNode }
+  | { store: T; actions: B; initial?: never; onPatches?: never; children?: ReactNode }
+  | { initial: T | (() => T); onPatches?: OnPatches; store?: never; actions?: never; children?: ReactNode }
 
 export interface ActionStoreContext<T, B> extends ActionContextStore<T, B> {
-  /** Owns a new store made from `initial`, or shares one from `useNewStore` as `store` and `actions`. */
+  /** Owns a new store made from `initial` (with `onPatches`, see useNewStore), or shares one from `useNewStore` as `store` and `actions`. */
   Provider(props: ActionProviderProps<T, B>): ReactNode
 }
 
@@ -315,12 +362,12 @@ function makeActionContext<T, B>() {
 function createActionContext<L extends RootActions>(actions: L): ActionStoreContext<ActionState<L>, BoundActions<L>> {
   const { def, Provide } = makeActionContext<ActionState<L>, BoundActions<L>>()
   // Its own component, so useNewStore only runs when the Provider owns the store.
-  function Owned(p: { initial: ActionState<L> | (() => ActionState<L>); children?: ReactNode }) {
-    const [value, bound] = useNewStore(p.initial, actions)
+  function Owned(p: { initial: ActionState<L> | (() => ActionState<L>); onPatches?: OnPatches; children?: ReactNode }) {
+    const [value, bound] = useNewStore(p.initial, actions, { onPatches: p.onPatches })
     return <Provide value={value} actions={bound}>{p.children}</Provide>
   }
-  function Provider({ store, actions: bound, initial, children }: ActionProviderProps<ActionState<L>, BoundActions<L>>) {
-    if (initial !== undefined) return <Owned initial={initial}>{children}</Owned>
+  function Provider({ store, actions: bound, initial, onPatches, children }: ActionProviderProps<ActionState<L>, BoundActions<L>>) {
+    if (initial !== undefined) return <Owned initial={initial} onPatches={onPatches}>{children}</Owned>
     return <Provide value={store!} actions={bound!}>{children}</Provide>
   }
   return { ...def, Provider }

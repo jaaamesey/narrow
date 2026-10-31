@@ -1,4 +1,4 @@
-import { create, isDraft, original, rawReturn, type Draft } from 'mutative'
+import { create, isDraft, original, type Draft, type Patches } from 'mutative'
 
 type Primitive = string | number | boolean | bigint | symbol | null | undefined
 
@@ -16,19 +16,37 @@ export interface SetStore<T extends object> {
 
 const modeOf = (next: unknown, mode?: 'mutate' | 'swap') => mode ?? (typeof next === 'function' ? 'mutate' : 'swap')
 
-// What a narrowed recipe hands back up the chain when the node it narrows to is the whole parent, which a draft can't be assigned over:
-// the root replaces its state with `value` instead. Never seen by user recipes.
+// What a recipe from inside the library (a narrowed setter's, a bound action's) returns to replace the whole state,
+// which a draft can't be assigned over: the root replaces its state with `value` instead. User recipes never see it.
 const REPLACE = Symbol('replace')
 type Replace = { [REPLACE]: true; value: unknown }
-const replacement = (value: unknown): Replace => ({ [REPLACE]: true, value })
+export const replacement = (value: unknown): Replace => ({ [REPLACE]: true, value })
 const isReplace = (r: unknown): r is Replace => typeof r === 'object' && r !== null && REPLACE in r
 
+/** Runs a recipe from inside the library on `set`'s draft. */
+export const mutateWith = (set: SetStore<any>, recipe: (draft: any) => Replace | void) =>
+  (set as (recipe: (draft: any) => unknown, mode: 'mutate') => void)(recipe, 'mutate')
+
+const rootRecipe = (next: unknown) => (draft: unknown) => {
+  const result = (next as (d: unknown) => unknown)(draft)
+  // Returned as is, not with rawReturn, so mutative finalizes any drafts inside it (an action's `s.todos.filter(…)`).
+  if (isReplace(result)) return result.value as object
+}
+
+/** The next state after a setter call. */
 export function applyUpdate<T>(prev: T, next: unknown, mode?: 'mutate' | 'swap'): T {
   if (modeOf(next, mode) === 'swap') return (typeof next === 'function' ? next(prev) : next) as T
-  return create(prev as object, (draft) => {
-    const result = (next as (d: Draft<T>) => unknown)(draft as Draft<T>)
-    if (isReplace(result)) return rawReturn(result.value as object)
-  }) as T
+  return create(prev as object, rootRecipe(next)) as T
+}
+
+/** The next state after a setter call, with Mutative's JSON patches for the change and for undoing it. */
+export function applyUpdateWithPatches<T>(prev: T, next: unknown, mode?: 'mutate' | 'swap'): [T, Patches, Patches] {
+  if (modeOf(next, mode) === 'swap') {
+    const value = (typeof next === 'function' ? next(prev) : next) as T
+    if (value === prev) return [prev, [], []]
+    return [value, [{ op: 'replace', path: [], value }], [{ op: 'replace', path: [], value: prev }]]
+  }
+  return create(prev as object, rootRecipe(next), { enablePatches: true }) as [T, Patches, Patches]
 }
 
 /** A narrow function, or `{ get, swap }` when the function can't be traced. */
@@ -103,7 +121,7 @@ export function narrowSetter<T extends object, N extends object>(
 ): SetStore<N> {
   const set = (next: unknown, mode?: 'mutate' | 'swap') => {
     const swap = modeOf(next, mode) === 'swap'
-    const recipe = (d: any): unknown => {
+    const recipe = (d: any): Replace | void => {
       if (typeof narrow !== 'function') {
         const node = narrow.get(plainOf(d))
         // Deliberately silent: late async writes to deleted items are normal (React dropped its similar warning).
@@ -127,7 +145,7 @@ export function narrowSetter<T extends object, N extends object>(
       if (!path.length) return replacement(value)
       assignAt(d, path, value)
     }
-    ;(parentSet as (recipe: (d: any) => unknown, mode: 'mutate') => void)(recipe, 'mutate')
+    mutateWith(parentSet, recipe)
   }
   return set as SetStore<N>
 }

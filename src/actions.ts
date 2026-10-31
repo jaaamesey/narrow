@@ -1,5 +1,6 @@
 import { create, isDraft, type Draft } from 'mutative'
-import { getAt, pathOf, type SetStore } from './store.js'
+import { markRoot } from './patches.js'
+import { getAt, mutateWith, pathOf, replacement, type SetStore } from './store.js'
 
 /** Functions that take the state first, then mutate it or return a replacement for it. */
 export type Actions<T> = Record<string, (state: Draft<T>, ...args: any[]) => T | void>
@@ -191,9 +192,11 @@ const infoOf = (level: object) => (level as { [LEVEL]?: LevelInfo })[LEVEL]
 function bindLevel(set: SetStore<any>, def: LevelDef, steps: Step[] = []): Record<string, unknown> {
   const bound: Record<string, unknown> = {}
   for (const [key, action] of Object.entries(def.actions)) {
-    // As a swap that makes its own draft, so that an action that replaces the root can return the replacement.
     bound[key] = (...args: unknown[]) =>
-      set((state) => create(state, (draft) => runAt(draft, steps, def.context, action, args) as never), 'swap')
+      mutateWith(set, (draft) => {
+        const root = runAt(draft, steps, def.context, action, args)
+        if (root) return replacement(root)
+      })
   }
   for (const [name, child] of Object.entries(def.children())) {
     // A new level each call: where its identity matters (a memoized row), React memoizes it.
@@ -270,7 +273,8 @@ export function withContext<T, A, C, X>(set: ActionTree<T, A, C, X>, context: X)
 
 /** Binds an action set to a setter, which can be any store's. */
 export function bindActions<T extends object, L extends ActionTree<T, unknown, unknown, unknown>>(set: SetStore<T>, actions: L): BoundActions<L> {
-  return bindLevel(set, actions[TREE]) as BoundActions<L>
+  // Marked as the root, so applyPatches can write through it.
+  return markRoot(bindLevel(set, actions[TREE]), set) as BoundActions<L>
 }
 
 export const isActionSet = (a: unknown): a is ActionTree<unknown, unknown, unknown> => typeof a === 'object' && a !== null && TREE in a
