@@ -728,28 +728,6 @@ describe('context', () => {
     act(() => a.page('p1').item('b').nudge())
     expect(renders).toEqual({ p1: 2, a: 1, b: 2, p2: 1, c: 1 })
   })
-  it('memoizes a list whose items have no level, with neither setStore nor actions', () => {
-    const renders: Record<string, number> = {}
-    let a!: BoundActions<typeof docActionSet>
-    const getPageId = (p: Page) => p.id
-    const renderPage = (p: Page, key: string) => {
-      renders[key] = (renders[key] ?? 0) + 1
-      return <span data-testid={key}>{p.items.length}</span>
-    }
-    function Comp() {
-      const [d, actions] = useNewStore(doc, docActionSet)
-      a = actions
-      return (
-        <NarrowList items={d.pages} getKey={getPageId}>
-          {renderPage}
-        </NarrowList>
-      )
-    }
-    render(<Comp />)
-    act(() => a.page('p2').clear())
-    expect(screen.getByTestId('p2').textContent).toBe('0')
-    expect(renders).toEqual({ p1: 1, p2: 2 })
-  })
 })
 
 // Nothing here is a global store: every store made from the same set or the same context definition is its own.

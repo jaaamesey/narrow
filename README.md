@@ -76,8 +76,6 @@ function TodoRow({ todo, setTodo }: { todo: Todo; setTodo: SetStore<Todo> }) {
 
 `NarrowList` also takes a record or a `Map`, for normalized state. Those are keyed already, so there's no `getKey`. `children` gets each entry's key as a third argument.
 
-For a list whose items aren't written to on their own, leave out `setStore`: each item is still memoized, and `children` gets the item and its key.
-
 ## Share it through context
 
 ```tsx

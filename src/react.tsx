@@ -105,7 +105,7 @@ export function useNarrowedStore(store: object, narrowOrPick: any, setStoreOrAct
   return [value, narrowed]
 }
 
-// The three ways NarrowList renders an item, chosen by which of `setStore` and `actions` it's given.
+// The two ways NarrowList renders an item: with a setter for it, or with its level's actions.
 type WithSetter<T extends object, K, I extends object> = {
   setStore: SetStore<I>
   actions?: undefined
@@ -117,8 +117,6 @@ type WithActions<T extends object, K, B> = {
   actions: (key: K) => B
   children: (item: T, itemActions: B, key: K) => ReactNode
 }
-// For a list whose items have no writes of their own: each item is only memoized.
-type ReadOnly<T extends object, K> = { setStore?: undefined; actions?: undefined; children: (item: T, key: K) => ReactNode }
 
 type ArrayItems<T extends object, K> = { items: T[]; getKey: (item: T, index: number) => K }
 type KeyedItems<I> = { items: I; getKey?: undefined }
@@ -130,18 +128,15 @@ interface NarrowListComponent {
   <T extends object, K extends Key, B extends BoundLevelOf<T>>(props: ArrayItems<T, K> & WithActions<T, K, B>): ReactNode
   <K extends string, T extends object, B extends BoundLevelOf<T>>(props: KeyedItems<Record<K, T>> & WithActions<T, K, B>): ReactNode
   <K extends Key, T extends object, B extends BoundLevelOf<T>>(props: KeyedItems<Map<K, T>> & WithActions<T, K, B>): ReactNode
-  <T extends object, K extends Key>(props: ArrayItems<T, K> & ReadOnly<T, K>): ReactNode
-  <K extends string, T extends object>(props: KeyedItems<Record<K, T>> & ReadOnly<T, K>): ReactNode
-  <K extends Key, T extends object>(props: KeyedItems<Map<K, T>> & ReadOnly<T, K>): ReactNode
 }
 
 type Items = object[] | Record<string, object> | Map<Key, object>
 type GetKey = (item: object, index: number) => Key
 
 /**
- * Renders every item of an array, record or Map as its own memoized component, so only changed items re-render.
- * With `setStore`, each item also gets a setter for itself. With `actions` (a level that takes the item's key), it
- * gets that level's actions instead. With neither, `children` gets the item and its key.
+ * Renders every item of an array, record or Map with a setter for just that item (from `setStore`), or with an
+ * action store, that item's level of actions (from `actions`, a level that takes the item's key). Each item is its
+ * own memoized component, and its setter or actions keep their identity, so only changed items re-render.
  */
 function NarrowListImpl({ items, setStore, getKey, actions, children }: {
   items: Items
@@ -161,10 +156,8 @@ function NarrowListImpl({ items, setStore, getKey, actions, children }: {
   return entries.map(([key, item]) =>
     setStore ? (
       <SetterListItem key={key} itemKey={key} item={item} kind={kind} setStore={setStore} getKey={getKey} render={children} />
-    ) : actions ? (
-      <ActionListItem key={key} itemKey={key} item={item} actions={actions} render={children} />
     ) : (
-      <ReadOnlyListItem key={key} itemKey={key} item={item} render={children} />
+      <ActionListItem key={key} itemKey={key} item={item} actions={actions!} render={children} />
     ),
   )
 }
@@ -204,10 +197,6 @@ const ActionListItem = memo(function ActionListItem(props: {
   // Kept while the level and key are, like SetterListItem's setter.
   const itemActions = useMemo(() => actions(itemKey), [actions, itemKey])
   return render(item, itemActions, itemKey)
-})
-
-const ReadOnlyListItem = memo(function ReadOnlyListItem(props: { itemKey: Key; item: object; render: (item: object, key: Key) => ReactNode }) {
-  return props.render(props.item, props.itemKey)
 })
 
 /** A store shared through context: `useVal()` re-renders on changes, `useSet()` never does. */

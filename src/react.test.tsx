@@ -547,3 +547,11 @@ describe('server rendering and types', () => {
     expect(typeof checks).toBe('function')
   })
 })
+
+describe('NarrowList props', () => {
+  it('needs setStore or actions: a list without either is plain React', () => {
+    const items = [{ id: 1 }]
+    // @ts-expect-error: neither setStore nor actions
+    void (<NarrowList items={items} getKey={(i) => i.id}>{() => null}</NarrowList>)
+  })
+})
