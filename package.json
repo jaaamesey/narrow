@@ -29,7 +29,7 @@
     "react": ">=19"
   },
   "dependencies": {
-    "mutative": "^2.0.0"
+    "mutative": "^2.0.1"
   },
   "devDependencies": {
     "@babel/core": "^8.0.7",
