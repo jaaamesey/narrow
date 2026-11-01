@@ -1,6 +1,6 @@
 {
   "name": "react-narrow",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -29,7 +29,7 @@
     "react": ">=19"
   },
   "dependencies": {
-    "mutative": "^2.0.0"
+    "mutative": "^2.0.1"
   },
   "devDependencies": {
     "@babel/core": "^8.0.7",
